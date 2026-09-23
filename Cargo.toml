@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = [
+    "domain",
+    "application",
+    "infrastructure",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["Luminair Contributors"]
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+domain = { path = "domain" }
+application = { path = "application" }
+
+nutype = { version = "0.8.0", features = ["serde", "regex", "rust_decimal"] }
+serde = { version = "1.0.229", features = ["derive"] }
+uuid = { version = "1.26.1", features = ["v4", "v7", "serde"] }
+chrono = { version = "0.4.45", features = ["serde"] }
+thiserror = { version = "2.0.20" }
+indexmap = { version = "2.14.2", features = ["serde"] }
+async-trait = { version = "0.1.92" }
+rust_decimal = { version = "1.43.0", features = ["serde"] }
+regex = { version = "1.13.1" }
+serde_json = { version = "1.0.151" }

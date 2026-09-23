@@ -1,0 +1,20 @@
+[package]
+name = "domain"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+nutype.workspace = true
+serde.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+indexmap.workspace = true
+async-trait.workspace = true
+rust_decimal.workspace = true
+regex.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
