@@ -1,4 +1,5 @@
-use async_trait::async_trait;
+use std::future::Future;
+
 use serde::{Deserialize, Serialize};
 
 use crate::entities::document_instance::DocumentInstance;
@@ -40,38 +41,46 @@ pub struct FieldFilter {
 pub type RelationMap =
     std::collections::HashMap<AttributeId, std::collections::HashMap<DocumentInstanceId, Vec<DocumentInstance>>>;
 
-#[async_trait]
 pub trait DocumentInstanceRepository: Send + Sync {
-    async fn find_by_id(
+    fn find_by_id(
         &self,
         id: DocumentInstanceId,
-    ) -> Result<Option<DocumentInstance>, DomainError>;
+    ) -> impl Future<Output = Result<Option<DocumentInstance>, DomainError>> + Send;
 
-    async fn find_by_type(
+    fn find_by_type(
         &self,
         type_id: DocumentTypeId,
         pagination: Pagination,
         filters: Vec<FieldFilter>,
-    ) -> Result<Page<DocumentInstance>, DomainError>;
+    ) -> impl Future<Output = Result<Page<DocumentInstance>, DomainError>> + Send;
 
-    async fn count(
+    fn count(
         &self,
         type_id: DocumentTypeId,
         filters: Vec<FieldFilter>,
-    ) -> Result<u64, DomainError>;
+    ) -> impl Future<Output = Result<u64, DomainError>> + Send;
 
     /// Batch-loads relations for a set of parent instance IDs.
     /// Returns a nested map: AttributeId -> (ParentInstanceId -> Vec<RelatedInstance>)
-    async fn fetch_relations(
+    fn fetch_relations(
         &self,
         type_id: DocumentTypeId,
         attributes: &[AttributeId],
         parent_ids: &[DocumentInstanceId],
-    ) -> Result<RelationMap, DomainError>;
+    ) -> impl Future<Output = Result<RelationMap, DomainError>> + Send;
 
-    async fn save(&self, instance: &DocumentInstance) -> Result<(), DomainError>;
+    fn save(
+        &self,
+        instance: &DocumentInstance,
+    ) -> impl Future<Output = Result<(), DomainError>> + Send;
 
-    async fn delete(&self, id: DocumentInstanceId) -> Result<(), DomainError>;
+    fn delete(
+        &self,
+        id: DocumentInstanceId,
+    ) -> impl Future<Output = Result<(), DomainError>> + Send;
 
-    async fn exists_for_type(&self, type_id: DocumentTypeId) -> Result<bool, DomainError>;
+    fn exists_for_type(
+        &self,
+        type_id: DocumentTypeId,
+    ) -> impl Future<Output = Result<bool, DomainError>> + Send;
 }

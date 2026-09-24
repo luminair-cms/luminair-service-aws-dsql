@@ -1,10 +1,9 @@
-use async_trait::async_trait;
+use std::future::Future;
 
 use crate::entities::system_config::SystemConfig;
 use crate::errors::DomainError;
 
-#[async_trait]
 pub trait SystemConfigRepository: Send + Sync {
-    async fn load(&self) -> Result<SystemConfig, DomainError>;
-    async fn save(&self, config: &SystemConfig) -> Result<(), DomainError>;
+    fn load(&self) -> impl Future<Output = Result<SystemConfig, DomainError>> + Send;
+    fn save(&self, config: &SystemConfig) -> impl Future<Output = Result<(), DomainError>> + Send;
 }

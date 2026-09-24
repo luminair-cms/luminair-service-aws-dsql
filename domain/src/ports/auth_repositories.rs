@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+use std::future::Future;
 
 use crate::entities::auth::access_request::AccessRequest;
 use crate::entities::auth::role::Role;
@@ -6,29 +6,59 @@ use crate::entities::auth::user_role_assignment::UserRoleAssignment;
 use crate::errors::DomainError;
 use crate::value_objects::{AccessRequestId, RoleId, UserId, UserRoleAssignmentId};
 
-#[async_trait]
 pub trait RoleRepository: Send + Sync {
-    async fn find_by_id(&self, id: RoleId) -> Result<Option<Role>, DomainError>;
-    async fn find_by_name(&self, name: &str) -> Result<Option<Role>, DomainError>;
-    async fn find_all(&self) -> Result<Vec<Role>, DomainError>;
-    async fn save(&self, role: &Role) -> Result<(), DomainError>;
+    fn find_by_id(
+        &self,
+        id: RoleId,
+    ) -> impl Future<Output = Result<Option<Role>, DomainError>> + Send;
+
+    fn find_by_name(
+        &self,
+        name: &str,
+    ) -> impl Future<Output = Result<Option<Role>, DomainError>> + Send;
+
+    fn find_all(&self) -> impl Future<Output = Result<Vec<Role>, DomainError>> + Send;
+
+    fn save(&self, role: &Role) -> impl Future<Output = Result<(), DomainError>> + Send;
 }
 
-#[async_trait]
 pub trait UserRoleAssignmentRepository: Send + Sync {
-    async fn find_by_user(&self, user_id: &UserId) -> Result<Vec<UserRoleAssignment>, DomainError>;
-    async fn exists_admin(&self, admin_role_id: RoleId) -> Result<bool, DomainError>;
-    async fn save(&self, assignment: &UserRoleAssignment) -> Result<(), DomainError>;
-    async fn delete(&self, id: UserRoleAssignmentId) -> Result<(), DomainError>;
+    fn find_by_user(
+        &self,
+        user_id: &UserId,
+    ) -> impl Future<Output = Result<Vec<UserRoleAssignment>, DomainError>> + Send;
+
+    fn exists_admin(
+        &self,
+        admin_role_id: RoleId,
+    ) -> impl Future<Output = Result<bool, DomainError>> + Send;
+
+    fn save(
+        &self,
+        assignment: &UserRoleAssignment,
+    ) -> impl Future<Output = Result<(), DomainError>> + Send;
+
+    fn delete(
+        &self,
+        id: UserRoleAssignmentId,
+    ) -> impl Future<Output = Result<(), DomainError>> + Send;
 }
 
-#[async_trait]
 pub trait AccessRequestRepository: Send + Sync {
-    async fn find_by_id(
+    fn find_by_id(
         &self,
         id: AccessRequestId,
-    ) -> Result<Option<AccessRequest>, DomainError>;
-    async fn find_by_user(&self, user_id: &UserId) -> Result<Option<AccessRequest>, DomainError>;
-    async fn find_pending(&self) -> Result<Vec<AccessRequest>, DomainError>;
-    async fn save(&self, request: &AccessRequest) -> Result<(), DomainError>;
+    ) -> impl Future<Output = Result<Option<AccessRequest>, DomainError>> + Send;
+
+    fn find_by_user(
+        &self,
+        user_id: &UserId,
+    ) -> impl Future<Output = Result<Option<AccessRequest>, DomainError>> + Send;
+
+    fn find_pending(&self) -> impl Future<Output = Result<Vec<AccessRequest>, DomainError>> + Send;
+
+    fn save(
+        &self,
+        request: &AccessRequest,
+    ) -> impl Future<Output = Result<(), DomainError>> + Send;
 }

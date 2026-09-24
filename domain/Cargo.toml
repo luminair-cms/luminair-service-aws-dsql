@@ -12,7 +12,6 @@ uuid.workspace = true
 chrono.workspace = true
 thiserror.workspace = true
 indexmap.workspace = true
-async-trait.workspace = true
 rust_decimal.workspace = true
 regex.workspace = true
 
