@@ -5,7 +5,6 @@ pub mod context;
 pub mod errors;
 pub mod services;
 
-#[cfg(test)]
 pub mod test_support;
 
 pub use commands::{
