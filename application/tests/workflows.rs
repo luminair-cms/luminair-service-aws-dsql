@@ -529,7 +529,7 @@ async fn test_two_phase_batch_populate_workflow() {
 async fn test_schema_and_locale_validation_workflow() {
     let harness = TestAppHarness::setup();
 
-    // 1. Missing required field -> fails
+    // 1. Missing required field -> validation error with all violations collected
     let missing_required = harness
         .documents_service
         .create(
@@ -537,12 +537,15 @@ async fn test_schema_and_locale_validation_workflow() {
             CreateDocumentCommand::new(harness.article_type.id, HashMap::new()),
         )
         .await;
-    assert!(matches!(
-        missing_required,
-        Err(ApplicationError::Domain(DomainError::InvalidFieldValue { .. }))
-    ));
+    // Returns Validation(Vec<String>) since service now collects all errors
+    assert!(
+        matches!(&missing_required, Err(ApplicationError::Validation(msgs)) if
+            msgs.iter().any(|m| m.contains("required") || m.contains("missing"))),
+        "expected Validation error mentioning 'required', got: {:?}",
+        missing_required
+    );
 
-    // 2. Unsupported locale ('es' not in en, uk) -> fails
+    // 2. Unsupported locale ('es' not in en, uk) -> validation error
     let mut invalid_locale_fields = HashMap::new();
     invalid_locale_fields.insert(
         harness.title_attr.clone(),
@@ -565,12 +568,14 @@ async fn test_schema_and_locale_validation_workflow() {
             CreateDocumentCommand::new(harness.article_type.id, invalid_locale_fields),
         )
         .await;
-    assert!(matches!(
-        invalid_locale,
-        Err(ApplicationError::Domain(DomainError::UnknownLocale(_)))
-    ));
+    assert!(
+        matches!(&invalid_locale, Err(ApplicationError::Validation(msgs)) if
+            msgs.iter().any(|m| m.contains("locale") || m.contains("unknown"))),
+        "expected Validation error mentioning unknown locale, got: {:?}",
+        invalid_locale
+    );
 
-    // 3. Undeclared attribute -> fails
+    // 3. Undeclared attribute -> validation error
     let fake_attr = AttributeId::try_new("hacker_field").unwrap();
     let mut undeclared_attr_fields = HashMap::new();
     undeclared_attr_fields.insert(
@@ -589,10 +594,12 @@ async fn test_schema_and_locale_validation_workflow() {
             CreateDocumentCommand::new(harness.article_type.id, undeclared_attr_fields),
         )
         .await;
-    assert!(matches!(
-        undeclared,
-        Err(ApplicationError::Domain(DomainError::UnknownAttribute(_)))
-    ));
+    assert!(
+        matches!(&undeclared, Err(ApplicationError::Validation(msgs)) if
+            msgs.iter().any(|m| m.contains("unknown attribute") || m.contains("undeclared"))),
+        "expected Validation error mentioning unknown attribute, got: {:?}",
+        undeclared
+    );
 
     // 4. Verify system_config_service reflects static configuration
     assert!(harness

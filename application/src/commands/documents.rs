@@ -175,6 +175,27 @@ impl UnpublishDocumentCommand {
     }
 }
 
+/// Query command to list all published snapshots (revision history) for a document instance.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListSnapshotsCommand {
+    /// Document type of the target document.
+    pub document_type: DocumentTypeId,
+    /// Identifier of the document instance whose snapshots to retrieve.
+    pub document_instance_id: DocumentInstanceId,
+}
+
+impl ListSnapshotsCommand {
+    pub fn new(
+        document_type: DocumentTypeId,
+        document_instance_id: DocumentInstanceId,
+    ) -> Self {
+        Self {
+            document_type,
+            document_instance_id,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

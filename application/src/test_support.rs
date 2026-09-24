@@ -56,6 +56,7 @@ impl FakeDocumentInstanceRepository {
 impl DocumentInstanceRepository for FakeDocumentInstanceRepository {
     async fn find_by_id(
         &self,
+        _type_id: DocumentTypeId,
         id: DocumentInstanceId,
     ) -> Result<Option<DocumentInstance>, DomainError> {
         let store = self.instances.read().map_err(|_| {
@@ -145,7 +146,7 @@ impl DocumentInstanceRepository for FakeDocumentInstanceRepository {
         Ok(())
     }
 
-    async fn delete(&self, id: DocumentInstanceId) -> Result<(), DomainError> {
+    async fn delete(&self, _type_id: DocumentTypeId, id: DocumentInstanceId) -> Result<(), DomainError> {
         let mut store = self.instances.write().map_err(|_| {
             DomainError::Unauthorized("failed to acquire write lock".into())
         })?;
@@ -207,6 +208,14 @@ impl SnapshotRepository for FakeSnapshotRepository {
             DomainError::Unauthorized("failed to acquire write lock".into())
         })?;
         store.push(snapshot.clone());
+        Ok(())
+    }
+
+    async fn delete_by_instance(&self, instance_id: DocumentInstanceId) -> Result<(), DomainError> {
+        let mut store = self.snapshots.write().map_err(|_| {
+            DomainError::Unauthorized("failed to acquire write lock".into())
+        })?;
+        store.retain(|s| s.instance_id != instance_id);
         Ok(())
     }
 }

@@ -31,8 +31,9 @@ pub enum ApplicationError {
     },
 
     /// An input command or query failed application-level validation.
-    #[error("validation error: {0}")]
-    Validation(String),
+    /// Contains all validation messages — never truncated to the first error.
+    #[error("validation error: {}", .0.join("; "))]
+    Validation(Vec<String>),
 
     /// The requested operation conflicts with existing system state.
     #[error("conflict: {0}")]
@@ -88,9 +89,20 @@ mod tests {
     }
 
     #[test]
-    fn test_validation_error_display() {
-        let err = ApplicationError::Validation("title must not be empty".to_string());
+    fn test_validation_error_display_single() {
+        let err = ApplicationError::Validation(vec!["title must not be empty".to_string()]);
         assert_eq!(err.to_string(), "validation error: title must not be empty");
+    }
+
+    #[test]
+    fn test_validation_error_display_multiple() {
+        let err = ApplicationError::Validation(vec![
+            "title must not be empty".to_string(),
+            "body locale 'fr' unknown".to_string(),
+        ]);
+        let msg = err.to_string();
+        assert!(msg.contains("title must not be empty"));
+        assert!(msg.contains("body locale 'fr' unknown"));
     }
 
     #[test]

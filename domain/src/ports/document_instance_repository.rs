@@ -42,8 +42,12 @@ pub type RelationMap =
     std::collections::HashMap<AttributeId, std::collections::HashMap<DocumentInstanceId, Vec<DocumentInstance>>>;
 
 pub trait DocumentInstanceRepository: Send + Sync {
+    /// Loads a single document instance by its type's table and its unique ID.
+    ///
+    /// `type_id` is required to resolve the per-type table name (ADR-007).
     fn find_by_id(
         &self,
+        type_id: DocumentTypeId,
         id: DocumentInstanceId,
     ) -> impl Future<Output = Result<Option<DocumentInstance>, DomainError>> + Send;
 
@@ -74,8 +78,12 @@ pub trait DocumentInstanceRepository: Send + Sync {
         instance: &DocumentInstance,
     ) -> impl Future<Output = Result<(), DomainError>> + Send;
 
+    /// Deletes a document instance from the type's table.
+    ///
+    /// `type_id` is required to resolve the per-type table name (ADR-007).
     fn delete(
         &self,
+        type_id: DocumentTypeId,
         id: DocumentInstanceId,
     ) -> impl Future<Output = Result<(), DomainError>> + Send;
 

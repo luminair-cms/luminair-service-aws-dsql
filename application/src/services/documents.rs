@@ -69,6 +69,13 @@ pub trait DocumentsService: Send + Sync + 'static {
         caller: &CallerContext,
         cmd: UnpublishDocumentCommand,
     ) -> impl Future<Output = Result<DocumentInstance, ApplicationError>> + Send;
+
+    /// Lists all published snapshots (revision history) for a document instance.
+    fn list_snapshots(
+        &self,
+        caller: &CallerContext,
+        cmd: ListSnapshotsCommand,
+    ) -> impl Future<Output = Result<Vec<PublishedSnapshot>, ApplicationError>> + Send;
 }
 
 /// Generic implementation of `DocumentsService` monomorphized over repository adapters.
@@ -187,7 +194,7 @@ where
     ) -> Result<Option<DocumentInstance>, ApplicationError> {
         let instance = self
             .instance_repo
-            .find_by_id(cmd.document_instance_id)
+            .find_by_id(cmd.document_type, cmd.document_instance_id)
             .await?;
 
         match instance {
@@ -235,14 +242,14 @@ where
         );
         instance.content.fields = cmd.fields;
 
-        // Content & locale validation
-        if let Err(mut errs) = self.schema_registry.validate_content(
+        // Content & locale validation — return ALL errors (R6)
+        if let Err(errs) = self.schema_registry.validate_content(
             cmd.document_type,
             &instance.content,
             &self.system_config,
-        ) && !errs.is_empty()
-        {
-            return Err(ApplicationError::Domain(errs.remove(0)));
+        ) {
+            let messages: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+            return Err(ApplicationError::Validation(messages));
         }
 
         self.instance_repo.save(&instance).await?;
@@ -256,7 +263,7 @@ where
     ) -> Result<DocumentInstance, ApplicationError> {
         let mut instance = self
             .instance_repo
-            .find_by_id(cmd.document_instance_id)
+            .find_by_id(cmd.document_type, cmd.document_instance_id)
             .await?
             .ok_or(ApplicationError::Domain(
                 DomainError::DocumentInstanceNotFound(cmd.document_instance_id),
@@ -273,14 +280,14 @@ where
         }
         instance.touch(Some(caller.user_id.clone()), Utc::now());
 
-        // Validate updated content
-        if let Err(mut errs) = self.schema_registry.validate_content(
+        // Validate updated content — return ALL errors (R6)
+        if let Err(errs) = self.schema_registry.validate_content(
             instance.document_type_id,
             &instance.content,
             &self.system_config,
-        ) && !errs.is_empty()
-        {
-            return Err(ApplicationError::Domain(errs.remove(0)));
+        ) {
+            let messages: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+            return Err(ApplicationError::Validation(messages));
         }
 
         self.instance_repo.save(&instance).await?;
@@ -294,7 +301,7 @@ where
     ) -> Result<(), ApplicationError> {
         let instance = self
             .instance_repo
-            .find_by_id(cmd.document_instance_id)
+            .find_by_id(cmd.document_type, cmd.document_instance_id)
             .await?
             .ok_or(ApplicationError::Domain(
                 DomainError::DocumentInstanceNotFound(cmd.document_instance_id),
@@ -305,7 +312,14 @@ where
             Some(&instance),
         )?;
 
-        self.instance_repo.delete(cmd.document_instance_id).await?;
+        // Cascade delete: remove all snapshots before the instance (R2)
+        // No FK in AWS DSQL — app layer is responsible for referential integrity (ADR-007)
+        self.snapshot_repo
+            .delete_by_instance(cmd.document_instance_id)
+            .await?;
+        self.instance_repo
+            .delete(instance.document_type_id, cmd.document_instance_id)
+            .await?;
         Ok(())
     }
 
@@ -316,7 +330,7 @@ where
     ) -> Result<PublishedSnapshot, ApplicationError> {
         let mut instance = self
             .instance_repo
-            .find_by_id(cmd.document_instance_id)
+            .find_by_id(cmd.document_type, cmd.document_instance_id)
             .await?
             .ok_or(ApplicationError::Domain(
                 DomainError::DocumentInstanceNotFound(cmd.document_instance_id),
@@ -334,14 +348,23 @@ where
                 instance.document_type_id,
             )))?;
 
+        // Draft-and-publish guard (R7): only types that support publish/unpublish can be published
+        if !doc_type.options.draft_and_publish {
+            return Err(ApplicationError::Conflict(format!(
+                "document type '{}' does not support draft-and-publish workflow",
+                doc_type.info.title
+            )));
+        }
+
         let snapshot = instance.publish(
             &doc_type.info.plural_name,
             Some(caller.user_id.clone()),
             Utc::now(),
         )?;
 
-        self.instance_repo.save(&instance).await?;
+        // Save snapshot first, then update instance state
         self.snapshot_repo.save(&snapshot).await?;
+        self.instance_repo.save(&instance).await?;
 
         Ok(snapshot)
     }
@@ -353,7 +376,7 @@ where
     ) -> Result<DocumentInstance, ApplicationError> {
         let mut instance = self
             .instance_repo
-            .find_by_id(cmd.document_instance_id)
+            .find_by_id(cmd.document_type, cmd.document_instance_id)
             .await?
             .ok_or(ApplicationError::Domain(
                 DomainError::DocumentInstanceNotFound(cmd.document_instance_id),
@@ -364,10 +387,52 @@ where
             Some(&instance),
         )?;
 
+        let doc_type = self
+            .schema_registry
+            .find_type(instance.document_type_id)
+            .ok_or(ApplicationError::Domain(DomainError::DocumentTypeNotFound(
+                instance.document_type_id,
+            )))?;
+
+        // Draft-and-publish guard (R7): only types that support publish/unpublish can be unpublished
+        if !doc_type.options.draft_and_publish {
+            return Err(ApplicationError::Conflict(format!(
+                "document type '{}' does not support draft-and-publish workflow",
+                doc_type.info.title
+            )));
+        }
+
         instance.unpublish(Utc::now())?;
         self.instance_repo.save(&instance).await?;
 
         Ok(instance)
+    }
+
+    async fn list_snapshots(
+        &self,
+        caller: &CallerContext,
+        cmd: ListSnapshotsCommand,
+    ) -> Result<Vec<PublishedSnapshot>, ApplicationError> {
+        // Require read permission; fetch instance to assert it belongs to the right type
+        let instance = self
+            .instance_repo
+            .find_by_id(cmd.document_type, cmd.document_instance_id)
+            .await?
+            .ok_or(ApplicationError::Domain(
+                DomainError::DocumentInstanceNotFound(cmd.document_instance_id),
+            ))?;
+
+        caller.check_permission(
+            &Permission::ReadDocument(Some(instance.document_type_id)),
+            Some(&instance),
+        )?;
+
+        let snapshots = self
+            .snapshot_repo
+            .find_by_instance(cmd.document_instance_id)
+            .await?;
+
+        Ok(snapshots)
     }
 }
 
@@ -661,5 +726,163 @@ mod tests {
             .await;
 
         assert!(matches!(res, Err(ApplicationError::Unauthorized { .. })));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // R5: list_snapshots
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_list_snapshots_returns_revision_history() {
+        let (service, doc_type, caller, title_attr) = make_test_fixture(DocumentKind::Collection);
+
+        // Create + publish twice
+        let mut fields = HashMap::new();
+        fields.insert(
+            title_attr,
+            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text("Draft 1".into()))),
+        );
+        let created = service
+            .create(&caller, CreateDocumentCommand::new(doc_type.id, fields))
+            .await
+            .expect("create succeeds");
+
+        service
+            .publish(&caller, PublishDocumentCommand::new(created.id, doc_type.id))
+            .await
+            .expect("first publish succeeds");
+        service
+            .publish(&caller, PublishDocumentCommand::new(created.id, doc_type.id))
+            .await
+            .expect("second publish succeeds");
+
+        let snapshots = service
+            .list_snapshots(&caller, ListSnapshotsCommand::new(doc_type.id, created.id))
+            .await
+            .expect("list_snapshots succeeds");
+
+        assert_eq!(snapshots.len(), 2, "should have 2 snapshots");
+        assert_eq!(snapshots[0].revision, 1);
+        assert_eq!(snapshots[1].revision, 2);
+    }
+
+    #[tokio::test]
+    async fn test_list_snapshots_unknown_instance_returns_not_found() {
+        let (service, doc_type, caller, _) = make_test_fixture(DocumentKind::Collection);
+
+        let fake_id = domain::value_objects::DocumentInstanceId::new(Uuid::now_v7());
+        let result = service
+            .list_snapshots(&caller, ListSnapshotsCommand::new(doc_type.id, fake_id))
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(ApplicationError::Domain(DomainError::DocumentInstanceNotFound(_)))
+        ));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // R7: draft_and_publish lifecycle guard
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_publish_blocked_when_draft_and_publish_disabled() {
+        // Build a doc type that has draft_and_publish = false
+        let type_id = DocumentTypeId::new(Uuid::now_v7());
+        let title_attr = AttributeId::try_new("title").unwrap();
+
+        let mut field_defs = IndexMap::new();
+        field_defs.insert(
+            title_attr.clone(),
+            FieldDefinition {
+                id: title_attr.clone(),
+                field_type: FieldType::Primitive(PrimitiveType::Text),
+                required: false,
+                unique: false,
+                constraints: vec![],
+            },
+        );
+
+        use domain::entities::document_type::{DocumentType, DocumentTypeInfo, DocumentTypeOptions};
+        let doc_type = DocumentType {
+            id: type_id,
+            kind: DocumentKind::Collection,
+            info: DocumentTypeInfo {
+                title: "Simple".into(),
+                singular_name: "simple".into(),
+                plural_name: "simples".into(),
+                description: None,
+            },
+            options: DocumentTypeOptions { draft_and_publish: false },
+            fields: field_defs,
+        };
+
+        let en = LocaleId::try_new("en").unwrap();
+        let config = Arc::new(
+            SystemConfig::new(SystemConfigId::new(Uuid::now_v7()), vec![en.clone()], en).unwrap(),
+        );
+        let schema_registry = Arc::new(SchemaRegistry::new(vec![doc_type.clone()], vec![]));
+        let instance_repo = Arc::new(FakeDocumentInstanceRepository::new());
+        let snapshot_repo = Arc::new(FakeSnapshotRepository::new());
+        let service = DocumentsServiceImpl::new(instance_repo, snapshot_repo, schema_registry, config);
+        let caller = CallerContext::system();
+
+        let created = service
+            .create(&caller, CreateDocumentCommand::new(doc_type.id, HashMap::new()))
+            .await
+            .expect("create succeeds");
+
+        let publish_result = service
+            .publish(&caller, PublishDocumentCommand::new(created.id, doc_type.id))
+            .await;
+
+        assert!(
+            matches!(publish_result, Err(ApplicationError::Conflict(_))),
+            "expected Conflict error when draft_and_publish=false, got: {:?}",
+            publish_result
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // R2: cascade delete of snapshots
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_delete_cascades_snapshots() {
+        let (service, doc_type, caller, title_attr) = make_test_fixture(DocumentKind::Collection);
+
+        let mut fields = HashMap::new();
+        fields.insert(
+            title_attr,
+            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text("Cascade".into()))),
+        );
+        let created = service
+            .create(&caller, CreateDocumentCommand::new(doc_type.id, fields))
+            .await
+            .expect("create succeeds");
+
+        service
+            .publish(&caller, PublishDocumentCommand::new(created.id, doc_type.id))
+            .await
+            .expect("publish succeeds");
+
+        // Before delete: one snapshot
+        let before = service
+            .list_snapshots(&caller, ListSnapshotsCommand::new(doc_type.id, created.id))
+            .await
+            .expect("list_snapshots before delete");
+        assert_eq!(before.len(), 1);
+
+        service
+            .delete(&caller, DeleteDocumentCommand::new(created.id, doc_type.id))
+            .await
+            .expect("delete succeeds");
+
+        // After delete: instance is gone
+        let found = service
+            .find_by_id(&caller, FindByIdCommand::new(doc_type.id, created.id))
+            .await
+            .expect("find_by_id returns Ok");
+        assert!(found.is_none(), "instance should be gone after delete");
     }
 }

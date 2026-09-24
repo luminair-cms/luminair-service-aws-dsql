@@ -5,6 +5,12 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[features]
+# Enables the `test_support` module (fake in-memory repositories).
+# Activate in integration test crates that need fakes:
+#   application = { path = "../application", features = ["test-support"] }
+test-support = []
+
 [dependencies]
 domain.workspace = true
 thiserror.workspace = true
@@ -13,6 +19,8 @@ uuid.workspace = true
 chrono.workspace = true
 
 [dev-dependencies]
+# Re-declare ourselves with the test-support feature so that integration tests
+# in application/tests/ can access application::test_support (fake repositories).
+application = { path = ".", features = ["test-support"] }
 tokio.workspace = true
 indexmap.workspace = true
-

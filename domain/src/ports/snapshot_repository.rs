@@ -20,4 +20,13 @@ pub trait SnapshotRepository: Send + Sync {
         &self,
         snapshot: &PublishedSnapshot,
     ) -> impl Future<Output = Result<(), DomainError>> + Send;
+
+    /// Deletes all snapshots for a given document instance.
+    ///
+    /// Must be called before deleting the parent instance to enforce
+    /// application-level referential integrity (ADR-007).
+    fn delete_by_instance(
+        &self,
+        instance_id: DocumentInstanceId,
+    ) -> impl Future<Output = Result<(), DomainError>> + Send;
 }

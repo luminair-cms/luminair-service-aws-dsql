@@ -124,14 +124,18 @@ mod tests {
     }
 
     #[test]
-    fn test_owner_rule_allows_action_without_roles() {
+    fn test_owner_rule_allows_read_and_update_without_roles() {
         let owner = UserId::try_new("user-owner").expect("valid user");
         let ctx = CallerContext::new(owner.clone(), Vec::new());
         let (type_id, instance) = make_test_instance(&owner);
 
-        let action = Permission::UpdateDocument(Some(type_id));
-        assert!(ctx.can(&action, Some(&instance)));
-        assert!(ctx.check_permission(&action, Some(&instance)).is_ok());
+        // Owner may read and update without any role
+        assert!(ctx.can(&Permission::UpdateDocument(Some(type_id)), Some(&instance)));
+        assert!(ctx.can(&Permission::ReadDocument(Some(type_id)), Some(&instance)));
+        assert!(ctx.check_permission(&Permission::UpdateDocument(Some(type_id)), Some(&instance)).is_ok());
+        // Publish and Delete require explicit RBAC — owner rule does not apply
+        assert!(!ctx.can(&Permission::PublishDocument(Some(type_id)), Some(&instance)));
+        assert!(!ctx.can(&Permission::DeleteDocument(Some(type_id)), Some(&instance)));
     }
 
     #[test]
