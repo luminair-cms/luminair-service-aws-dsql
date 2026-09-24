@@ -9,6 +9,9 @@ license.workspace = true
 domain.workspace = true
 thiserror.workspace = true
 serde.workspace = true
+uuid.workspace = true
+chrono.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
+
