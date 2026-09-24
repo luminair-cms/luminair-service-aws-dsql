@@ -26,3 +26,4 @@ async-trait = { version = "0.1.92" }
 rust_decimal = { version = "1.43.0", features = ["serde"] }
 regex = { version = "1.13.1" }
 serde_json = { version = "1.0.151" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

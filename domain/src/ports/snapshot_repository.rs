@@ -1,21 +1,32 @@
-use async_trait::async_trait;
+use std::future::Future;
 
 use crate::entities::published_snapshot::PublishedSnapshot;
 use crate::errors::DomainError;
 use crate::value_objects::DocumentInstanceId;
 
-#[async_trait]
 pub trait SnapshotRepository: Send + Sync {
-    async fn find_by_instance(
+    fn find_by_instance(
         &self,
         instance_id: DocumentInstanceId,
-    ) -> Result<Vec<PublishedSnapshot>, DomainError>;
+    ) -> impl Future<Output = Result<Vec<PublishedSnapshot>, DomainError>> + Send;
 
-    async fn find_by_revision(
+    fn find_by_revision(
         &self,
         instance_id: DocumentInstanceId,
         revision: u32,
-    ) -> Result<Option<PublishedSnapshot>, DomainError>;
+    ) -> impl Future<Output = Result<Option<PublishedSnapshot>, DomainError>> + Send;
 
-    async fn save(&self, snapshot: &PublishedSnapshot) -> Result<(), DomainError>;
+    fn save(
+        &self,
+        snapshot: &PublishedSnapshot,
+    ) -> impl Future<Output = Result<(), DomainError>> + Send;
+
+    /// Deletes all snapshots for a given document instance.
+    ///
+    /// Must be called before deleting the parent instance to enforce
+    /// application-level referential integrity (ADR-007).
+    fn delete_by_instance(
+        &self,
+        instance_id: DocumentInstanceId,
+    ) -> impl Future<Output = Result<(), DomainError>> + Send;
 }

@@ -49,6 +49,7 @@ pub struct DocumentInstance {
     pub document_type_id: DocumentTypeId,
     pub content: DocumentContent,
     pub relations: HashMap<AttributeId, Vec<ResolvedRelation>>,
+    pub populated_relations: HashMap<AttributeId, Vec<DocumentInstance>>,
     pub audit: AuditTrail,
 }
 
@@ -65,6 +66,7 @@ impl DocumentInstance {
                 },
             },
             relations: HashMap::new(),
+            populated_relations: HashMap::new(),
             audit: AuditTrail {
                 created_at: now,
                 created_by: by.clone(),
@@ -73,6 +75,15 @@ impl DocumentInstance {
                 version: 1,
             },
         }
+    }
+
+    /// Returns a new instance with populated related document instances attached.
+    pub fn with_populated_relations(
+        mut self,
+        populated: HashMap<AttributeId, Vec<DocumentInstance>>,
+    ) -> Self {
+        self.populated_relations = populated;
+        self
     }
 
     /// Publishes the document instance, advancing its revision and returning an immutable PublishedSnapshot.

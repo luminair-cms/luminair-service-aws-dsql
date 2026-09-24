@@ -15,15 +15,14 @@ impl AuthorizationService {
         instance: Option<&DocumentInstance>,
         roles: &[Role],
     ) -> bool {
-        // 1. Special Owner Rule: Owner has read/update/delete/publish permission on their instance
+        // 1. Special Owner Rule: Owner may read and update their own instance without a role.
+        //    Publish and Delete always require explicit RBAC permission, enabling editorial
+        //    workflows where authors cannot self-publish or self-delete.
         if let Some(inst) = instance
             && inst.is_owned_by(user_id)
         {
             match action {
-                Permission::UpdateDocument(_)
-                | Permission::DeleteDocument(_)
-                | Permission::PublishDocument(_)
-                | Permission::ReadDocument(_) => return true,
+                Permission::UpdateDocument(_) | Permission::ReadDocument(_) => return true,
                 _ => {}
             }
         }
@@ -50,11 +49,25 @@ mod tests {
     }
 
     #[test]
-    fn test_owner_always_allowed() {
+    fn test_owner_allowed_read_and_update() {
         let (owner, _, type_id, instance) = make_test_fixture();
-        let action = Permission::UpdateDocument(Some(type_id));
-        // Owner has no roles assigned, but owner rule permits
-        assert!(AuthorizationService::can(&owner, &action, Some(&instance), &[]));
+        // Owner may read and update without any role
+        assert!(AuthorizationService::can(&owner, &Permission::ReadDocument(Some(type_id)), Some(&instance), &[]));
+        assert!(AuthorizationService::can(&owner, &Permission::UpdateDocument(Some(type_id)), Some(&instance), &[]));
+    }
+
+    #[test]
+    fn test_owner_denied_publish_without_role() {
+        let (owner, _, type_id, instance) = make_test_fixture();
+        // Owner cannot publish without an explicit role
+        assert!(!AuthorizationService::can(&owner, &Permission::PublishDocument(Some(type_id)), Some(&instance), &[]));
+    }
+
+    #[test]
+    fn test_owner_denied_delete_without_role() {
+        let (owner, _, type_id, instance) = make_test_fixture();
+        // Owner cannot delete without an explicit role
+        assert!(!AuthorizationService::can(&owner, &Permission::DeleteDocument(Some(type_id)), Some(&instance), &[]));
     }
 
     #[test]

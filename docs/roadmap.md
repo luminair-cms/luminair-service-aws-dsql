@@ -17,7 +17,7 @@ flowchart TD
     end
 
     subgraph CrateApp["application crate (Use Cases)"]
-        App["2. Application Layer<br/>(Command / Query Handlers, Fake Repositories)"]:::planned
+        App["2. Application Layer<br/>(Services, Commands, Fake Repositories)"]:::done
     end
 
     subgraph CrateInfra["infrastructure crate (Adapters & Composition Root)"]
@@ -61,24 +61,25 @@ flowchart TD
 
 ---
 
-### Phase 2: Application Layer (Use Cases & Workflows)
+### Phase 2: Application Layer (Completed ✅)
 * **Crate**: `application`
 * **Objective**: Orchestrate business use cases, command and query handling, and transactional logic independently of databases or HTTP frameworks.
 * **Key Components**:
   * **Document Workflows**:
-    * `CreateDocumentInstanceCommand`: Validates input with `SchemaRegistry`, checks singleton constraint for `SingleType`, generates v7 UUID, saves via repository.
-    * `UpdateDocumentInstanceCommand`: Bumps version and audit trail, validates fields.
-    * `PublishDocumentInstanceCommand`: Advances revision, snapshots fields, records publication.
-    * `UnpublishDocumentInstanceCommand`: Transitions document to draft state preserving last published revision.
-    * `GetDocumentInstanceQuery`, `ListDocumentInstancesQuery`, `DeleteDocumentInstanceCommand`.
+    * `CreateDocumentCommand`: Validates input with `SchemaRegistry`, checks singleton constraint for `SingleType`, generates v7 UUID, saves via repository.
+    * `UpdateDocumentCommand`: Bumps version and audit trail, validates fields.
+    * `PublishDocumentCommand`: Advances revision, snapshots fields, records publication.
+    * `UnpublishDocumentCommand`: Transitions document to draft state preserving last published revision.
+    * `FindDocumentsCommand`, `FindByIdCommand`, `DeleteDocumentCommand`.
+    * Two-phase batch relation enrichment (`enrich`) to avoid Cartesian explosion without N+1 queries.
   * **Access & Authorization Workflows**:
-    * `SubmitAccessRequestCommand`: Creates pending request for OIDC user.
+    * `SubmitAccessRequestCommand`: Creates pending request for OIDC user (blocks duplicate active requests).
     * `ApproveAccessRequestCommand`: Grants assigned roles, creates `UserRoleAssignment` records.
     * `RejectAccessRequestCommand`: Sets rejected status with audit notes.
-    * `ListAccessRequestsQuery`.
+    * Query and owner-authorized inspection methods.
   * **System Configuration**:
-    * `GetSystemConfigQuery`, `UpdateSystemConfigCommand`.
-* **Testing Strategy**: 100% in-memory unit tests using in-memory fake repositories (`FakeDocumentInstanceRepository`, `FakeAccessRequestRepository`, etc.) per `.ai/skills/testing.md`.
+    * `SystemConfigService`: Read-only introspection of static system configuration (locales, default locale) loaded at startup.
+* **Deliverable**: `application` crate with 35 tests (31 unit, 4 end-to-end workflow integration tests), zero warnings, RPITIT native async traits with zero heap allocation.
 
 ---
 
@@ -175,7 +176,7 @@ Consists of two complementary mechanisms aligned with [ADR-006](./adr/ADR-006-sc
 
 | Step | Milestone | Output | Primary Verification |
 |---|---|---|---|
-| **1** | Application Layer | Use cases, command/query handlers | Unit tests with in-memory repositories |
+| **1** | Application Layer | Use cases, command handlers, test fakes | ✅ Completed (35 tests, RPITIT async) |
 | **2** | Static Migrations | `infrastructure/migrations/*.sql` | `sqlx migrate run` |
 | **3** | Schema Loader & DDL | JSON parser, DDL generator, drift check | Unit tests with mock JSON schemas |
 | **4** | SQLx Repositories | Concrete repository adapters | `#[sqlx::test]` integration tests |

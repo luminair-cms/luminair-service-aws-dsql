@@ -1,4 +1,5 @@
-use async_trait::async_trait;
+use std::future::Future;
+
 use serde::{Deserialize, Serialize};
 
 use crate::entities::document_instance::DocumentInstance;
@@ -35,23 +36,59 @@ pub struct FieldFilter {
     pub value: DomainValue,
 }
 
-#[async_trait]
-pub trait DocumentInstanceRepository: Send + Sync {
-    async fn find_by_id(
-        &self,
-        id: DocumentInstanceId,
-    ) -> Result<Option<DocumentInstance>, DomainError>;
+/// A mapping of relation attribute to a map of parent instance IDs and their related instances:
+/// AttributeId -> (ParentInstanceId -> Vec<RelatedInstance>)
+pub type RelationMap =
+    std::collections::HashMap<AttributeId, std::collections::HashMap<DocumentInstanceId, Vec<DocumentInstance>>>;
 
-    async fn find_by_type(
+pub trait DocumentInstanceRepository: Send + Sync {
+    /// Loads a single document instance by its type's table and its unique ID.
+    ///
+    /// `type_id` is required to resolve the per-type table name (ADR-007).
+    fn find_by_id(
+        &self,
+        type_id: DocumentTypeId,
+        id: DocumentInstanceId,
+    ) -> impl Future<Output = Result<Option<DocumentInstance>, DomainError>> + Send;
+
+    fn find_by_type(
         &self,
         type_id: DocumentTypeId,
         pagination: Pagination,
         filters: Vec<FieldFilter>,
-    ) -> Result<Page<DocumentInstance>, DomainError>;
+    ) -> impl Future<Output = Result<Page<DocumentInstance>, DomainError>> + Send;
 
-    async fn save(&self, instance: &DocumentInstance) -> Result<(), DomainError>;
+    fn count(
+        &self,
+        type_id: DocumentTypeId,
+        filters: Vec<FieldFilter>,
+    ) -> impl Future<Output = Result<u64, DomainError>> + Send;
 
-    async fn delete(&self, id: DocumentInstanceId) -> Result<(), DomainError>;
+    /// Batch-loads relations for a set of parent instance IDs.
+    /// Returns a nested map: AttributeId -> (ParentInstanceId -> Vec<RelatedInstance>)
+    fn fetch_relations(
+        &self,
+        type_id: DocumentTypeId,
+        attributes: &[AttributeId],
+        parent_ids: &[DocumentInstanceId],
+    ) -> impl Future<Output = Result<RelationMap, DomainError>> + Send;
 
-    async fn exists_for_type(&self, type_id: DocumentTypeId) -> Result<bool, DomainError>;
+    fn save(
+        &self,
+        instance: &DocumentInstance,
+    ) -> impl Future<Output = Result<(), DomainError>> + Send;
+
+    /// Deletes a document instance from the type's table.
+    ///
+    /// `type_id` is required to resolve the per-type table name (ADR-007).
+    fn delete(
+        &self,
+        type_id: DocumentTypeId,
+        id: DocumentInstanceId,
+    ) -> impl Future<Output = Result<(), DomainError>> + Send;
+
+    fn exists_for_type(
+        &self,
+        type_id: DocumentTypeId,
+    ) -> impl Future<Output = Result<bool, DomainError>> + Send;
 }

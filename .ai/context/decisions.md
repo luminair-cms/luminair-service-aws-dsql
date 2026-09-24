@@ -82,7 +82,17 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
 - **`Relation` has no `created_at`** — static config has no runtime creation timestamp
 - **ID types derive `Display`** — required for `thiserror` `#[error("{0}")]` messages
 
+## 2026-09-24 — Application Layer Architecture & Concurrency Model
+
+- **Native Async Traits (RPITIT + Send)**: All port traits in `domain::ports` and service traits in `application::services` use native Rust 2024 `fn ... -> impl Future<Output = Result<...>> + Send` without `async-trait`. This avoids heap allocations (`Pin<Box<dyn Future>>`), eliminates macro dependencies, and enables LLVM monomorphization.
+- **Zero Runtime Dependencies**: `application` crate depends strictly on `domain`, `thiserror`, `serde`, `uuid`, and `chrono`. `tokio` is strictly a test runner dependency in `[dev-dependencies]`.
+- **Sequential Fetch for MVP**: In `DocumentsService::find`, `find_by_type` and `count` are executed sequentially, avoiding runtime concurrency join overhead (`tokio::try_join!`) in the application layer.
+- **Two-Phase Batch Relation Enrichment (`enrich`)**: Strapi 5-style `populate` avoids SQL `LEFT JOIN` Cartesian explosion. Parent IDs are collected from the queried page, relations are fetched in a single batch query, and related documents are stitched in-memory.
+- **Static SystemConfig**: `SystemConfig` (supported locales, default locale) is loaded once at startup alongside the schema (ADR-004, ADR-006). It is immutable at runtime, eliminating the need for `UpdateLocalesCommand` or runtime locale mutation APIs.
+- **Shared In-Memory Test Fakes**: `application::test_support` exposes fast, thread-safe in-memory repositories using `std::sync::RwLock` for deterministic testing across the workspace.
+
 ---
 
 > **AI agents**: when you make a non-obvious decision during implementation, append an entry here.
 > Format: `## YYYY-MM-DD — Topic` followed by bullet points.
+

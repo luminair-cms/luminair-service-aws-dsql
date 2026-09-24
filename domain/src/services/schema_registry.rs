@@ -2,12 +2,81 @@ use std::collections::HashMap;
 
 use crate::entities::document_instance::DocumentContent;
 use crate::entities::document_type::DocumentType;
+use crate::entities::field_definition::FieldConstraint;
 use crate::entities::relation::{Relation, RelationView};
 use crate::entities::system_config::SystemConfig;
 use crate::errors::DomainError;
 use crate::types::content_value::ContentValue;
+use crate::types::domain_value::DomainValue;
 use crate::types::field_type::FieldType;
-use crate::value_objects::{DocumentTypeId, RelationId};
+use crate::types::primitive_value::PrimitiveValue;
+use crate::value_objects::{AttributeId, DocumentTypeId, RelationId};
+
+/// Evaluates a single `FieldConstraint` against a scalar `DomainValue`.
+/// Returns `Some(DomainError)` if the constraint is violated, `None` if satisfied.
+fn evaluate_constraint(
+    attr_id: &AttributeId,
+    constraint: &FieldConstraint,
+    value: &DomainValue,
+) -> Option<DomainError> {
+    let violated = |reason: String| -> Option<DomainError> {
+        Some(DomainError::InvalidFieldValue {
+            attribute_id: attr_id.clone(),
+            reason,
+        })
+    };
+
+    match (constraint, value) {
+        (FieldConstraint::MinLength(min), DomainValue::Primitive(PrimitiveValue::Text(s)))
+        | (FieldConstraint::MinLength(min), DomainValue::Primitive(PrimitiveValue::Uid(s))) => {
+            if s.len() < *min {
+                return violated(format!("length {} is below minimum {}", s.len(), min));
+            }
+        }
+        (FieldConstraint::MaxLength(max), DomainValue::Primitive(PrimitiveValue::Text(s)))
+        | (FieldConstraint::MaxLength(max), DomainValue::Primitive(PrimitiveValue::Uid(s))) => {
+            if s.len() > *max {
+                return violated(format!("length {} exceeds maximum {}", s.len(), max));
+            }
+        }
+        (FieldConstraint::Pattern(pat), DomainValue::Primitive(PrimitiveValue::Text(s)))
+        | (FieldConstraint::Pattern(pat), DomainValue::Primitive(PrimitiveValue::Uid(s))) => {
+            // Compile regex; treat compilation failure as a constraint violation to surface config errors
+            match regex::Regex::new(pat) {
+                Ok(re) if !re.is_match(s) => {
+                    return violated(format!("value '{}' does not match pattern '{}'", s, pat));
+                }
+                Err(e) => {
+                    return violated(format!("invalid regex pattern '{}': {}", pat, e));
+                }
+                _ => {}
+            }
+        }
+        (FieldConstraint::MinInteger(min), DomainValue::Primitive(PrimitiveValue::Integer(n))) => {
+            if *n < *min {
+                return violated(format!("value {} is below minimum {}", n, min));
+            }
+        }
+        (FieldConstraint::MaxInteger(max), DomainValue::Primitive(PrimitiveValue::Integer(n))) => {
+            if *n > *max {
+                return violated(format!("value {} exceeds maximum {}", n, max));
+            }
+        }
+        (FieldConstraint::MinDecimal(min), DomainValue::Primitive(PrimitiveValue::Decimal(d))) => {
+            if d < min {
+                return violated(format!("value {} is below minimum {}", d, min));
+            }
+        }
+        (FieldConstraint::MaxDecimal(max), DomainValue::Primitive(PrimitiveValue::Decimal(d)))
+            if d > max =>
+        {
+            return violated(format!("value {} exceeds maximum {}", d, max));
+        }
+        // Constraint not applicable to this value type — silently skip (type validation catches mismatches)
+        _ => {}
+    }
+    None
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct SchemaRegistry {
@@ -87,6 +156,13 @@ impl SchemaRegistry {
                                 field_def.field_type
                             ),
                         });
+                    } else {
+                        // Evaluate FieldConstraints against the scalar value
+                        for constraint in &field_def.constraints {
+                            if let Some(err) = evaluate_constraint(attr_id, constraint, val) {
+                                errors.push(err);
+                            }
+                        }
                     }
                 }
                 Some(ContentValue::LocalizedText(map)) => {
@@ -337,5 +413,133 @@ mod tests {
         let errs = registry.validate_content(type_id, &content, &config).unwrap_err();
         assert_eq!(errs.len(), 1);
         assert!(matches!(&errs[0], DomainError::UnknownLocale(loc) if *loc == fr));
+    }
+
+    #[test]
+    fn test_validate_content_field_constraint_min_length_violated() {
+        use crate::entities::field_definition::FieldConstraint;
+        use crate::types::field_type::PrimitiveType;
+
+        let type_id = DocumentTypeId::new(Uuid::now_v7());
+        let slug_attr = AttributeId::try_new("slug").unwrap();
+        let mut fields_def = IndexMap::new();
+        fields_def.insert(
+            slug_attr.clone(),
+            FieldDefinition {
+                id: slug_attr.clone(),
+                field_type: FieldType::Primitive(PrimitiveType::Text),
+                required: true,
+                unique: false,
+                constraints: vec![FieldConstraint::MinLength(5)],
+            },
+        );
+        let doc_type = DocumentType {
+            id: type_id,
+            kind: crate::entities::document_type::DocumentKind::Collection,
+            info: crate::entities::document_type::DocumentTypeInfo {
+                title: "Slugged".into(),
+                singular_name: "slugged".into(),
+                plural_name: "sluggeds".into(),
+                description: None,
+            },
+            options: crate::entities::document_type::DocumentTypeOptions { draft_and_publish: true },
+            fields: fields_def,
+        };
+        let en = LocaleId::try_new("en").unwrap();
+        let config = SystemConfig::new(SystemConfigId::new(Uuid::now_v7()), vec![en.clone()], en).unwrap();
+        let registry = SchemaRegistry::new(vec![doc_type], vec![]);
+
+        let mut content_fields = HashMap::new();
+        content_fields.insert(
+            slug_attr.clone(),
+            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text("hi".into()))),
+        );
+        let content = DocumentContent {
+            fields: content_fields,
+            publication_state: PublicationState::Draft { last_published_revision: None },
+        };
+        let errs = registry.validate_content(type_id, &content, &config).unwrap_err();
+        assert_eq!(errs.len(), 1);
+        assert!(matches!(errs[0], DomainError::InvalidFieldValue { .. }));
+        assert!(errs[0].to_string().contains("below minimum"));
+    }
+
+    #[test]
+    fn test_validate_content_field_constraint_pattern_violated() {
+        use crate::entities::field_definition::FieldConstraint;
+        use crate::types::field_type::PrimitiveType;
+
+        let type_id = DocumentTypeId::new(Uuid::now_v7());
+        let slug_attr = AttributeId::try_new("slug").unwrap();
+        let mut fields_def = IndexMap::new();
+        fields_def.insert(
+            slug_attr.clone(),
+            FieldDefinition {
+                id: slug_attr.clone(),
+                field_type: FieldType::Primitive(PrimitiveType::Text),
+                required: true,
+                unique: false,
+                constraints: vec![FieldConstraint::Pattern("^[a-z0-9-]+$".into())],
+            },
+        );
+        let doc_type = DocumentType {
+            id: type_id,
+            kind: crate::entities::document_type::DocumentKind::Collection,
+            info: crate::entities::document_type::DocumentTypeInfo {
+                title: "Slugged".into(),
+                singular_name: "slugged".into(),
+                plural_name: "sluggeds".into(),
+                description: None,
+            },
+            options: crate::entities::document_type::DocumentTypeOptions { draft_and_publish: true },
+            fields: fields_def,
+        };
+        let en = LocaleId::try_new("en").unwrap();
+        let config = SystemConfig::new(SystemConfigId::new(Uuid::now_v7()), vec![en.clone()], en).unwrap();
+        let registry = SchemaRegistry::new(vec![doc_type], vec![]);
+
+        let mut content_fields = HashMap::new();
+        content_fields.insert(
+            slug_attr.clone(),
+            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text("INVALID SLUG!".into()))),
+        );
+        let content = DocumentContent {
+            fields: content_fields,
+            publication_state: PublicationState::Draft { last_published_revision: None },
+        };
+        let errs = registry.validate_content(type_id, &content, &config).unwrap_err();
+        assert_eq!(errs.len(), 1);
+        assert!(errs[0].to_string().contains("does not match pattern"));
+    }
+
+    #[test]
+    fn test_validate_content_multiple_errors_returned() {
+        // Both title (wrong type) and body (unknown locale) fail → both errors should be returned
+        let (doc_type, config) = make_test_setup();
+        let type_id = doc_type.id;
+        let registry = SchemaRegistry::new(vec![doc_type], vec![]);
+
+        let mut fields = HashMap::new();
+        // Title: wrong type (Integer instead of Text)
+        fields.insert(
+            AttributeId::try_new("title").unwrap(),
+            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Integer(999))),
+        );
+        // Body: unknown locale
+        let mut loc_map = HashMap::new();
+        loc_map.insert(LocaleId::try_new("fr").unwrap(), "Bonjour".to_string());
+        fields.insert(
+            AttributeId::try_new("body").unwrap(),
+            ContentValue::LocalizedText(loc_map),
+        );
+
+        let content = DocumentContent {
+            fields,
+            publication_state: PublicationState::Draft { last_published_revision: None },
+        };
+
+        let errs = registry.validate_content(type_id, &content, &config).unwrap_err();
+        // Must return ALL errors, not just the first one
+        assert_eq!(errs.len(), 2, "expected 2 errors but got {:?}", errs);
     }
 }
