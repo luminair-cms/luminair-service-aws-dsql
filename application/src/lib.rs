@@ -17,3 +17,4 @@ pub use context::*;
 pub use errors::*;
 pub use services::access_requests::{AccessRequestsService, AccessRequestsServiceImpl};
 pub use services::documents::{DocumentsService, DocumentsServiceImpl};
+pub use services::system_config::{SystemConfigService, SystemConfigServiceImpl};
