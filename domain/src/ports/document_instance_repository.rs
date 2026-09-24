@@ -35,6 +35,11 @@ pub struct FieldFilter {
     pub value: DomainValue,
 }
 
+/// A mapping of relation attribute to a map of parent instance IDs and their related instances:
+/// AttributeId -> (ParentInstanceId -> Vec<RelatedInstance>)
+pub type RelationMap =
+    std::collections::HashMap<AttributeId, std::collections::HashMap<DocumentInstanceId, Vec<DocumentInstance>>>;
+
 #[async_trait]
 pub trait DocumentInstanceRepository: Send + Sync {
     async fn find_by_id(
@@ -48,6 +53,21 @@ pub trait DocumentInstanceRepository: Send + Sync {
         pagination: Pagination,
         filters: Vec<FieldFilter>,
     ) -> Result<Page<DocumentInstance>, DomainError>;
+
+    async fn count(
+        &self,
+        type_id: DocumentTypeId,
+        filters: Vec<FieldFilter>,
+    ) -> Result<u64, DomainError>;
+
+    /// Batch-loads relations for a set of parent instance IDs.
+    /// Returns a nested map: AttributeId -> (ParentInstanceId -> Vec<RelatedInstance>)
+    async fn fetch_relations(
+        &self,
+        type_id: DocumentTypeId,
+        attributes: &[AttributeId],
+        parent_ids: &[DocumentInstanceId],
+    ) -> Result<RelationMap, DomainError>;
 
     async fn save(&self, instance: &DocumentInstance) -> Result<(), DomainError>;
 
