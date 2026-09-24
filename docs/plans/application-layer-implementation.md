@@ -197,16 +197,6 @@ pub struct RejectAccessRequestCommand {
 }
 ```
 
-#### `commands/system_config.rs`
-```rust
-use domain::value_objects::LocaleId;
-
-#[derive(Debug, Clone)]
-pub struct UpdateLocalesCommand {
-    pub available_locales: Vec<LocaleId>,
-    pub default_locale: LocaleId,
-}
-```
 
 ---
 
@@ -350,37 +340,30 @@ pub struct AccessRequestsServiceImpl<A, U, R> {
 
 ---
 
-### Phase 6: `SystemConfigService` Trait & Default Implementation (`application/src/services/system_config.rs`)
+### Phase 6: `SystemConfigService` (Read-Only) (`application/src/services/system_config.rs`)
+
+`SystemConfig` (locales, default locale) is loaded once from static JSON configuration at application startup alongside the schema (ADR-004, ADR-006) and is immutable for the lifetime of the process. There is no runtime command or API for mutating locales.
+
+If an endpoint (`GET /api/system-config`) is exposed to allow clients/UI to introspect supported locales:
 
 ```rust
-use std::future::Future;
 use std::sync::Arc;
 use domain::entities::system_config::SystemConfig;
-use domain::ports::SystemConfigRepository;
-use crate::commands::system_config::*;
-use crate::context::CallerContext;
-use crate::errors::ApplicationError;
 
-pub trait SystemConfigService: Send + Sync + 'static {
-    fn get_config(
-        &self,
-        caller: &CallerContext,
-    ) -> impl Future<Output = Result<SystemConfig, ApplicationError>> + Send;
-
-    fn update_locales(
-        &self,
-        caller: &CallerContext,
-        cmd: UpdateLocalesCommand,
-    ) -> impl Future<Output = Result<SystemConfig, ApplicationError>> + Send;
+pub struct SystemConfigService {
+    config: Arc<SystemConfig>,
 }
 
-pub struct SystemConfigServiceImpl<C> {
-    pub config_repo: Arc<C>,
+impl SystemConfigService {
+    pub fn new(config: Arc<SystemConfig>) -> Self {
+        Self { config }
+    }
+
+    pub fn get_config(&self) -> &SystemConfig {
+        &self.config
+    }
 }
 ```
-
-* Enforces `Permission::ManageSchema` for locale updates.
-* Enforces invariant that `default_locale` is present in `available_locales`.
 
 ---
 
@@ -389,7 +372,6 @@ pub struct SystemConfigServiceImpl<C> {
 Thread-safe fake repositories under `#[cfg(test)]` (using `std::sync::RwLock`):
 - `FakeDocumentInstanceRepository`: Uses `RwLock<HashMap<DocumentInstanceId, DocumentInstance>>`. Supports `find_by_id`, `find_by_type`, `count`, `fetch_relations`, `save`, `delete`, `exists_for_type`.
 - `FakeSnapshotRepository`: Uses `RwLock<Vec<PublishedSnapshot>>`.
-- `FakeSystemConfigRepository`: Uses `RwLock<SystemConfig>`.
 - `FakeRoleRepository`: Uses `RwLock<HashMap<RoleId, Role>>`.
 - `FakeUserRoleAssignmentRepository`: Uses `RwLock<Vec<UserRoleAssignment>>`.
 - `FakeAccessRequestRepository`: Uses `RwLock<HashMap<AccessRequestId, AccessRequest>>`.
@@ -436,8 +418,7 @@ Target test coverage:
    - `test_approve_already_approved_fails`
    - `test_unauthorized_approval_denied`
 3. `system_config`:
-   - `test_update_locales_success`
-   - `test_update_locales_missing_default_fails`
+   - `test_get_config_returns_static_locales`
 
 ---
 
