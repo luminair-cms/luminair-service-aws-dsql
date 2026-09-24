@@ -4,10 +4,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::published_snapshot::PublishedSnapshot;
 use crate::errors::DomainError;
 use crate::types::content_value::ContentValue;
 use crate::value_objects::{AttributeId, DocumentInstanceId, DocumentTypeId, SnapshotId, UserId};
-use super::published_snapshot::PublishedSnapshot;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PublicationState {
@@ -151,12 +151,12 @@ impl DocumentInstance {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Duration;
     use crate::types::domain_value::DomainValue;
     use crate::types::primitive_value::PrimitiveValue;
+    use chrono::Duration;
 
     fn make_test_instance() -> (DocumentInstance, UserId, DateTime<Utc>) {
-        let type_id = DocumentTypeId::new(Uuid::now_v7());
+        let type_id = DocumentTypeId::try_new("article").unwrap();
         let user = UserId::try_new("user_123").unwrap();
         let now = Utc::now();
         let instance = DocumentInstance::new(type_id, Some(user.clone()), now);
@@ -249,9 +249,7 @@ mod tests {
     #[test]
     fn test_unpublish_records_last_revision() {
         let (mut instance, user, now) = make_test_instance();
-        instance
-            .publish("articles", Some(user), now)
-            .unwrap();
+        instance.publish("articles", Some(user), now).unwrap();
 
         let unpub_time = now + Duration::seconds(10);
         instance.unpublish(unpub_time).unwrap();
@@ -270,7 +268,10 @@ mod tests {
     fn test_unpublish_on_draft_fails() {
         let (mut instance, _, now) = make_test_instance();
         let res = instance.unpublish(now);
-        assert!(matches!(res, Err(DomainError::InvalidStateTransition { .. })));
+        assert!(matches!(
+            res,
+            Err(DomainError::InvalidStateTransition { .. })
+        ));
     }
 
     #[test]

@@ -37,7 +37,5 @@ pub enum DomainError {
     Unauthorized(String),
 
     #[error("invalid state transition: {reason}")]
-    InvalidStateTransition {
-        reason: String,
-    },
+    InvalidStateTransition { reason: String },
 }

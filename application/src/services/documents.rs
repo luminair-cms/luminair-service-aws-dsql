@@ -161,22 +161,31 @@ where
         caller: &CallerContext,
         cmd: FindDocumentsCommand,
     ) -> Result<(Vec<DocumentInstance>, u64), ApplicationError> {
-        caller.check_permission(&Permission::ReadDocument(Some(cmd.document_type)), None)?;
+        caller.check_permission(
+            &Permission::ReadDocument(Some(cmd.document_type.clone())),
+            None,
+        )?;
 
         self.schema_registry
-            .find_type(cmd.document_type)
-            .ok_or(ApplicationError::Domain(DomainError::DocumentTypeNotFound(
-                cmd.document_type,
-            )))?;
+            .find_type(&cmd.document_type)
+            .ok_or_else(|| {
+                ApplicationError::Domain(DomainError::DocumentTypeNotFound(
+                    cmd.document_type.clone(),
+                ))
+            })?;
 
         // Sequential fetch for MVP
         let page = self
             .instance_repo
-            .find_by_type(cmd.document_type, cmd.pagination, cmd.filters.clone())
+            .find_by_type(
+                cmd.document_type.clone(),
+                cmd.pagination,
+                cmd.filters.clone(),
+            )
             .await?;
         let count = self
             .instance_repo
-            .count(cmd.document_type, cmd.filters)
+            .count(cmd.document_type.clone(), cmd.filters)
             .await?;
 
         // Two-phase batch relation enrichment
@@ -194,13 +203,13 @@ where
     ) -> Result<Option<DocumentInstance>, ApplicationError> {
         let instance = self
             .instance_repo
-            .find_by_id(cmd.document_type, cmd.document_instance_id)
+            .find_by_id(cmd.document_type.clone(), cmd.document_instance_id)
             .await?;
 
         match instance {
             Some(inst) => {
                 caller.check_permission(
-                    &Permission::ReadDocument(Some(inst.document_type_id)),
+                    &Permission::ReadDocument(Some(inst.document_type_id.clone())),
                     Some(&inst),
                 )?;
                 let mut enriched = self
@@ -217,26 +226,34 @@ where
         caller: &CallerContext,
         cmd: CreateDocumentCommand,
     ) -> Result<DocumentInstance, ApplicationError> {
-        caller.check_permission(&Permission::CreateDocument(Some(cmd.document_type)), None)?;
+        caller.check_permission(
+            &Permission::CreateDocument(Some(cmd.document_type.clone())),
+            None,
+        )?;
 
         let doc_type = self
             .schema_registry
-            .find_type(cmd.document_type)
-            .ok_or(ApplicationError::Domain(DomainError::DocumentTypeNotFound(
-                cmd.document_type,
-            )))?;
+            .find_type(&cmd.document_type)
+            .ok_or_else(|| {
+                ApplicationError::Domain(DomainError::DocumentTypeNotFound(
+                    cmd.document_type.clone(),
+                ))
+            })?;
 
         // Singleton Guard (ADR-002 Option C)
         if doc_type.kind == DocumentKind::SingleType
-            && self.instance_repo.exists_for_type(cmd.document_type).await?
+            && self
+                .instance_repo
+                .exists_for_type(cmd.document_type.clone())
+                .await?
         {
-            return Err(ApplicationError::Domain(DomainError::SingleTypeAlreadyExists(
-                cmd.document_type,
-            )));
+            return Err(ApplicationError::Domain(
+                DomainError::SingleTypeAlreadyExists(cmd.document_type),
+            ));
         }
 
         let mut instance = DocumentInstance::new(
-            cmd.document_type,
+            cmd.document_type.clone(),
             Some(caller.user_id.clone()),
             Utc::now(),
         );
@@ -244,7 +261,7 @@ where
 
         // Content & locale validation — return ALL errors (R6)
         if let Err(errs) = self.schema_registry.validate_content(
-            cmd.document_type,
+            &cmd.document_type,
             &instance.content,
             &self.system_config,
         ) {
@@ -270,7 +287,7 @@ where
             ))?;
 
         caller.check_permission(
-            &Permission::UpdateDocument(Some(instance.document_type_id)),
+            &Permission::UpdateDocument(Some(instance.document_type_id.clone())),
             Some(&instance),
         )?;
 
@@ -282,7 +299,7 @@ where
 
         // Validate updated content — return ALL errors (R6)
         if let Err(errs) = self.schema_registry.validate_content(
-            instance.document_type_id,
+            &instance.document_type_id,
             &instance.content,
             &self.system_config,
         ) {
@@ -308,7 +325,7 @@ where
             ))?;
 
         caller.check_permission(
-            &Permission::DeleteDocument(Some(instance.document_type_id)),
+            &Permission::DeleteDocument(Some(instance.document_type_id.clone())),
             Some(&instance),
         )?;
 
@@ -337,16 +354,18 @@ where
             ))?;
 
         caller.check_permission(
-            &Permission::PublishDocument(Some(instance.document_type_id)),
+            &Permission::PublishDocument(Some(instance.document_type_id.clone())),
             Some(&instance),
         )?;
 
         let doc_type = self
             .schema_registry
-            .find_type(instance.document_type_id)
-            .ok_or(ApplicationError::Domain(DomainError::DocumentTypeNotFound(
-                instance.document_type_id,
-            )))?;
+            .find_type(&instance.document_type_id)
+            .ok_or_else(|| {
+                ApplicationError::Domain(DomainError::DocumentTypeNotFound(
+                    instance.document_type_id.clone(),
+                ))
+            })?;
 
         // Draft-and-publish guard (R7): only types that support publish/unpublish can be published
         if !doc_type.options.draft_and_publish {
@@ -383,16 +402,18 @@ where
             ))?;
 
         caller.check_permission(
-            &Permission::PublishDocument(Some(instance.document_type_id)),
+            &Permission::PublishDocument(Some(instance.document_type_id.clone())),
             Some(&instance),
         )?;
 
         let doc_type = self
             .schema_registry
-            .find_type(instance.document_type_id)
-            .ok_or(ApplicationError::Domain(DomainError::DocumentTypeNotFound(
-                instance.document_type_id,
-            )))?;
+            .find_type(&instance.document_type_id)
+            .ok_or_else(|| {
+                ApplicationError::Domain(DomainError::DocumentTypeNotFound(
+                    instance.document_type_id.clone(),
+                ))
+            })?;
 
         // Draft-and-publish guard (R7): only types that support publish/unpublish can be unpublished
         if !doc_type.options.draft_and_publish {
@@ -423,7 +444,7 @@ where
             ))?;
 
         caller.check_permission(
-            &Permission::ReadDocument(Some(instance.document_type_id)),
+            &Permission::ReadDocument(Some(instance.document_type_id.clone())),
             Some(&instance),
         )?;
 
@@ -463,7 +484,7 @@ mod tests {
         CallerContext,
         AttributeId,
     ) {
-        let type_id = DocumentTypeId::new(Uuid::now_v7());
+        let type_id = DocumentTypeId::try_new("article").unwrap();
         let title_attr = AttributeId::try_new("title").unwrap();
 
         let mut fields = IndexMap::new();
@@ -502,12 +523,8 @@ mod tests {
         let instance_repo = Arc::new(FakeDocumentInstanceRepository::new());
         let snapshot_repo = Arc::new(FakeSnapshotRepository::new());
 
-        let service = DocumentsServiceImpl::new(
-            instance_repo,
-            snapshot_repo,
-            schema_registry,
-            config,
-        );
+        let service =
+            DocumentsServiceImpl::new(instance_repo, snapshot_repo, schema_registry, config);
 
         let caller = CallerContext::system();
         (service, doc_type, caller, title_attr)
@@ -520,13 +537,15 @@ mod tests {
         let mut fields = HashMap::new();
         fields.insert(
             title_attr,
-            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text("Hello Rust".into()))),
+            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text(
+                "Hello Rust".into(),
+            ))),
         );
 
         let created = service
             .create(
                 &caller,
-                CreateDocumentCommand::new(doc_type.id, fields),
+                CreateDocumentCommand::new(doc_type.id.clone(), fields),
             )
             .await
             .expect("create success");
@@ -534,7 +553,7 @@ mod tests {
         let fetched = service
             .find_by_id(
                 &caller,
-                FindByIdCommand::new(doc_type.id, created.id),
+                FindByIdCommand::new(doc_type.id.clone(), created.id),
             )
             .await
             .expect("find success")
@@ -551,14 +570,16 @@ mod tests {
         let mut fields = HashMap::new();
         fields.insert(
             title_attr.clone(),
-            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text("Header".into()))),
+            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text(
+                "Header".into(),
+            ))),
         );
 
         // First creation succeeds
         service
             .create(
                 &caller,
-                CreateDocumentCommand::new(doc_type.id, fields.clone()),
+                CreateDocumentCommand::new(doc_type.id.clone(), fields.clone()),
             )
             .await
             .expect("first create succeeds");
@@ -567,7 +588,7 @@ mod tests {
         let second = service
             .create(
                 &caller,
-                CreateDocumentCommand::new(doc_type.id, fields),
+                CreateDocumentCommand::new(doc_type.id.clone(), fields),
             )
             .await;
 
@@ -584,17 +605,22 @@ mod tests {
         let mut fields = HashMap::new();
         fields.insert(
             title_attr,
-            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text("Post 1".into()))),
+            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text(
+                "Post 1".into(),
+            ))),
         );
 
         let inst = service
-            .create(&caller, CreateDocumentCommand::new(doc_type.id, fields))
+            .create(
+                &caller,
+                CreateDocumentCommand::new(doc_type.id.clone(), fields),
+            )
             .await
             .unwrap();
 
         // Setup relation data in fake repo
         let rel_attr = AttributeId::try_new("tags").unwrap();
-        let tag_type_id = DocumentTypeId::new(Uuid::now_v7());
+        let tag_type_id = DocumentTypeId::try_new("tag").unwrap();
         let related_tag = DocumentInstance::new(tag_type_id, None, Utc::now());
 
         service.instance_repo.add_relation_data(
@@ -604,7 +630,7 @@ mod tests {
         );
 
         // Query with populate
-        let cmd = FindDocumentsCommand::new(doc_type.id, Pagination::default())
+        let cmd = FindDocumentsCommand::new(doc_type.id.clone(), Pagination::default())
             .with_populate(vec![rel_attr.clone()]);
 
         let (items, count) = service.find(&caller, cmd).await.expect("find ok");
@@ -612,7 +638,10 @@ mod tests {
         assert_eq!(items.len(), 1);
 
         let doc = &items[0];
-        let populated_tags = doc.populated_relations.get(&rel_attr).expect("tags populated");
+        let populated_tags = doc
+            .populated_relations
+            .get(&rel_attr)
+            .expect("tags populated");
         assert_eq!(populated_tags.len(), 1);
         assert_eq!(populated_tags[0].id, related_tag.id);
     }
@@ -624,11 +653,16 @@ mod tests {
         let mut fields = HashMap::new();
         fields.insert(
             title_attr.clone(),
-            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text("Old Title".into()))),
+            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text(
+                "Old Title".into(),
+            ))),
         );
 
         let created = service
-            .create(&caller, CreateDocumentCommand::new(doc_type.id, fields))
+            .create(
+                &caller,
+                CreateDocumentCommand::new(doc_type.id.clone(), fields),
+            )
             .await
             .unwrap();
         assert_eq!(created.audit.version, 1);
@@ -636,13 +670,15 @@ mod tests {
         let mut update_fields = HashMap::new();
         update_fields.insert(
             title_attr,
-            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text("New Title".into()))),
+            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text(
+                "New Title".into(),
+            ))),
         );
 
         let updated = service
             .update(
                 &caller,
-                UpdateDocumentCommand::new(created.id, doc_type.id, update_fields),
+                UpdateDocumentCommand::new(created.id, doc_type.id.clone(), update_fields),
             )
             .await
             .expect("update success");
@@ -657,11 +693,16 @@ mod tests {
         let mut fields = HashMap::new();
         fields.insert(
             title_attr,
-            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text("Live News".into()))),
+            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text(
+                "Live News".into(),
+            ))),
         );
 
         let created = service
-            .create(&caller, CreateDocumentCommand::new(doc_type.id, fields))
+            .create(
+                &caller,
+                CreateDocumentCommand::new(doc_type.id.clone(), fields),
+            )
             .await
             .unwrap();
 
@@ -669,7 +710,7 @@ mod tests {
         let snapshot = service
             .publish(
                 &caller,
-                PublishDocumentCommand::new(created.id, doc_type.id),
+                PublishDocumentCommand::new(created.id, doc_type.id.clone()),
             )
             .await
             .expect("publish success");
@@ -690,7 +731,7 @@ mod tests {
         let unpublished = service
             .unpublish(
                 &caller,
-                UnpublishDocumentCommand::new(created.id, doc_type.id),
+                UnpublishDocumentCommand::new(created.id, doc_type.id.clone()),
             )
             .await
             .expect("unpublish success");
@@ -715,13 +756,15 @@ mod tests {
         let mut fields = HashMap::new();
         fields.insert(
             title_attr,
-            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text("Restricted".into()))),
+            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text(
+                "Restricted".into(),
+            ))),
         );
 
         let res = service
             .create(
                 &unauthorized_caller,
-                CreateDocumentCommand::new(doc_type.id, fields),
+                CreateDocumentCommand::new(doc_type.id.clone(), fields),
             )
             .await;
 
@@ -740,24 +783,38 @@ mod tests {
         let mut fields = HashMap::new();
         fields.insert(
             title_attr,
-            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text("Draft 1".into()))),
+            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text(
+                "Draft 1".into(),
+            ))),
         );
         let created = service
-            .create(&caller, CreateDocumentCommand::new(doc_type.id, fields))
+            .create(
+                &caller,
+                CreateDocumentCommand::new(doc_type.id.clone(), fields),
+            )
             .await
             .expect("create succeeds");
 
         service
-            .publish(&caller, PublishDocumentCommand::new(created.id, doc_type.id))
+            .publish(
+                &caller,
+                PublishDocumentCommand::new(created.id, doc_type.id.clone()),
+            )
             .await
             .expect("first publish succeeds");
         service
-            .publish(&caller, PublishDocumentCommand::new(created.id, doc_type.id))
+            .publish(
+                &caller,
+                PublishDocumentCommand::new(created.id, doc_type.id.clone()),
+            )
             .await
             .expect("second publish succeeds");
 
         let snapshots = service
-            .list_snapshots(&caller, ListSnapshotsCommand::new(doc_type.id, created.id))
+            .list_snapshots(
+                &caller,
+                ListSnapshotsCommand::new(doc_type.id.clone(), created.id),
+            )
             .await
             .expect("list_snapshots succeeds");
 
@@ -772,12 +829,17 @@ mod tests {
 
         let fake_id = domain::value_objects::DocumentInstanceId::new(Uuid::now_v7());
         let result = service
-            .list_snapshots(&caller, ListSnapshotsCommand::new(doc_type.id, fake_id))
+            .list_snapshots(
+                &caller,
+                ListSnapshotsCommand::new(doc_type.id.clone(), fake_id),
+            )
             .await;
 
         assert!(matches!(
             result,
-            Err(ApplicationError::Domain(DomainError::DocumentInstanceNotFound(_)))
+            Err(ApplicationError::Domain(
+                DomainError::DocumentInstanceNotFound(_)
+            ))
         ));
     }
 
@@ -788,7 +850,7 @@ mod tests {
     #[tokio::test]
     async fn test_publish_blocked_when_draft_and_publish_disabled() {
         // Build a doc type that has draft_and_publish = false
-        let type_id = DocumentTypeId::new(Uuid::now_v7());
+        let type_id = DocumentTypeId::try_new("simple").unwrap();
         let title_attr = AttributeId::try_new("title").unwrap();
 
         let mut field_defs = IndexMap::new();
@@ -803,7 +865,9 @@ mod tests {
             },
         );
 
-        use domain::entities::document_type::{DocumentType, DocumentTypeInfo, DocumentTypeOptions};
+        use domain::entities::document_type::{
+            DocumentType, DocumentTypeInfo, DocumentTypeOptions,
+        };
         let doc_type = DocumentType {
             id: type_id,
             kind: DocumentKind::Collection,
@@ -813,7 +877,9 @@ mod tests {
                 plural_name: "simples".into(),
                 description: None,
             },
-            options: DocumentTypeOptions { draft_and_publish: false },
+            options: DocumentTypeOptions {
+                draft_and_publish: false,
+            },
             fields: field_defs,
         };
 
@@ -824,16 +890,23 @@ mod tests {
         let schema_registry = Arc::new(SchemaRegistry::new(vec![doc_type.clone()], vec![]));
         let instance_repo = Arc::new(FakeDocumentInstanceRepository::new());
         let snapshot_repo = Arc::new(FakeSnapshotRepository::new());
-        let service = DocumentsServiceImpl::new(instance_repo, snapshot_repo, schema_registry, config);
+        let service =
+            DocumentsServiceImpl::new(instance_repo, snapshot_repo, schema_registry, config);
         let caller = CallerContext::system();
 
         let created = service
-            .create(&caller, CreateDocumentCommand::new(doc_type.id, HashMap::new()))
+            .create(
+                &caller,
+                CreateDocumentCommand::new(doc_type.id.clone(), HashMap::new()),
+            )
             .await
             .expect("create succeeds");
 
         let publish_result = service
-            .publish(&caller, PublishDocumentCommand::new(created.id, doc_type.id))
+            .publish(
+                &caller,
+                PublishDocumentCommand::new(created.id, doc_type.id.clone()),
+            )
             .await;
 
         assert!(
@@ -854,33 +927,50 @@ mod tests {
         let mut fields = HashMap::new();
         fields.insert(
             title_attr,
-            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text("Cascade".into()))),
+            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text(
+                "Cascade".into(),
+            ))),
         );
         let created = service
-            .create(&caller, CreateDocumentCommand::new(doc_type.id, fields))
+            .create(
+                &caller,
+                CreateDocumentCommand::new(doc_type.id.clone(), fields),
+            )
             .await
             .expect("create succeeds");
 
         service
-            .publish(&caller, PublishDocumentCommand::new(created.id, doc_type.id))
+            .publish(
+                &caller,
+                PublishDocumentCommand::new(created.id, doc_type.id.clone()),
+            )
             .await
             .expect("publish succeeds");
 
         // Before delete: one snapshot
         let before = service
-            .list_snapshots(&caller, ListSnapshotsCommand::new(doc_type.id, created.id))
+            .list_snapshots(
+                &caller,
+                ListSnapshotsCommand::new(doc_type.id.clone(), created.id),
+            )
             .await
             .expect("list_snapshots before delete");
         assert_eq!(before.len(), 1);
 
         service
-            .delete(&caller, DeleteDocumentCommand::new(created.id, doc_type.id))
+            .delete(
+                &caller,
+                DeleteDocumentCommand::new(created.id, doc_type.id.clone()),
+            )
             .await
             .expect("delete succeeds");
 
         // After delete: instance is gone
         let found = service
-            .find_by_id(&caller, FindByIdCommand::new(doc_type.id, created.id))
+            .find_by_id(
+                &caller,
+                FindByIdCommand::new(doc_type.id.clone(), created.id),
+            )
             .await
             .expect("find_by_id returns Ok");
         assert!(found.is_none(), "instance should be gone after delete");

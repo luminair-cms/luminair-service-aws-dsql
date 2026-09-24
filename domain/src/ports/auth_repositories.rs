@@ -57,8 +57,6 @@ pub trait AccessRequestRepository: Send + Sync {
 
     fn find_pending(&self) -> impl Future<Output = Result<Vec<AccessRequest>, DomainError>> + Send;
 
-    fn save(
-        &self,
-        request: &AccessRequest,
-    ) -> impl Future<Output = Result<(), DomainError>> + Send;
+    fn save(&self, request: &AccessRequest)
+    -> impl Future<Output = Result<(), DomainError>> + Send;
 }

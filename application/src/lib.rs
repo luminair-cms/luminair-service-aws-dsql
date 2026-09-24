@@ -12,8 +12,8 @@ pub mod test_support;
 
 pub use commands::{
     ApproveAccessRequestCommand, CreateDocumentCommand, DeleteDocumentCommand, FindByIdCommand,
-    FindDocumentsCommand, ListSnapshotsCommand, PublishDocumentCommand,
-    RejectAccessRequestCommand, SubmitAccessRequestCommand, UnpublishDocumentCommand,
+    FindDocumentsCommand, ListSnapshotsCommand, PublishDocumentCommand, RejectAccessRequestCommand,
+    SubmitAccessRequestCommand, UnpublishDocumentCommand,
 };
 pub use context::*;
 pub use errors::*;

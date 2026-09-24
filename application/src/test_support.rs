@@ -9,9 +9,7 @@ use domain::entities::published_snapshot::PublishedSnapshot;
 use domain::entities::role::Role;
 use domain::entities::user_role_assignment::UserRoleAssignment;
 use domain::errors::DomainError;
-use domain::ports::document_instance_repository::{
-    FieldFilter, Page, Pagination, RelationMap,
-};
+use domain::ports::document_instance_repository::{FieldFilter, Page, Pagination, RelationMap};
 use domain::ports::{
     AccessRequestRepository, DocumentInstanceRepository, RoleRepository, SnapshotRepository,
     UserRoleAssignmentRepository,
@@ -59,9 +57,10 @@ impl DocumentInstanceRepository for FakeDocumentInstanceRepository {
         _type_id: DocumentTypeId,
         id: DocumentInstanceId,
     ) -> Result<Option<DocumentInstance>, DomainError> {
-        let store = self.instances.read().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire read lock".into())
-        })?;
+        let store = self
+            .instances
+            .read()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
         Ok(store.get(&id).cloned())
     }
 
@@ -71,9 +70,10 @@ impl DocumentInstanceRepository for FakeDocumentInstanceRepository {
         pagination: Pagination,
         _filters: Vec<FieldFilter>,
     ) -> Result<Page<DocumentInstance>, DomainError> {
-        let store = self.instances.read().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire read lock".into())
-        })?;
+        let store = self
+            .instances
+            .read()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
 
         let filtered: Vec<DocumentInstance> = store
             .values()
@@ -102,9 +102,10 @@ impl DocumentInstanceRepository for FakeDocumentInstanceRepository {
         type_id: DocumentTypeId,
         _filters: Vec<FieldFilter>,
     ) -> Result<u64, DomainError> {
-        let store = self.instances.read().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire read lock".into())
-        })?;
+        let store = self
+            .instances
+            .read()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
         let count = store
             .values()
             .filter(|inst| inst.document_type_id == type_id)
@@ -118,9 +119,10 @@ impl DocumentInstanceRepository for FakeDocumentInstanceRepository {
         attributes: &[AttributeId],
         parent_ids: &[DocumentInstanceId],
     ) -> Result<RelationMap, DomainError> {
-        let relations_store = self.relations.read().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire read lock".into())
-        })?;
+        let relations_store = self
+            .relations
+            .read()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
 
         let mut result = RelationMap::new();
         for attr in attributes {
@@ -139,25 +141,32 @@ impl DocumentInstanceRepository for FakeDocumentInstanceRepository {
     }
 
     async fn save(&self, instance: &DocumentInstance) -> Result<(), DomainError> {
-        let mut store = self.instances.write().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire write lock".into())
-        })?;
+        let mut store = self
+            .instances
+            .write()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire write lock".into()))?;
         store.insert(instance.id, instance.clone());
         Ok(())
     }
 
-    async fn delete(&self, _type_id: DocumentTypeId, id: DocumentInstanceId) -> Result<(), DomainError> {
-        let mut store = self.instances.write().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire write lock".into())
-        })?;
+    async fn delete(
+        &self,
+        _type_id: DocumentTypeId,
+        id: DocumentInstanceId,
+    ) -> Result<(), DomainError> {
+        let mut store = self
+            .instances
+            .write()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire write lock".into()))?;
         store.remove(&id);
         Ok(())
     }
 
     async fn exists_for_type(&self, type_id: DocumentTypeId) -> Result<bool, DomainError> {
-        let store = self.instances.read().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire read lock".into())
-        })?;
+        let store = self
+            .instances
+            .read()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
         Ok(store.values().any(|inst| inst.document_type_id == type_id))
     }
 }
@@ -179,9 +188,10 @@ impl SnapshotRepository for FakeSnapshotRepository {
         &self,
         instance_id: DocumentInstanceId,
     ) -> Result<Vec<PublishedSnapshot>, DomainError> {
-        let store = self.snapshots.read().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire read lock".into())
-        })?;
+        let store = self
+            .snapshots
+            .read()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
         Ok(store
             .iter()
             .filter(|s| s.instance_id == instance_id)
@@ -194,9 +204,10 @@ impl SnapshotRepository for FakeSnapshotRepository {
         instance_id: DocumentInstanceId,
         revision: u32,
     ) -> Result<Option<PublishedSnapshot>, DomainError> {
-        let store = self.snapshots.read().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire read lock".into())
-        })?;
+        let store = self
+            .snapshots
+            .read()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
         Ok(store
             .iter()
             .find(|s| s.instance_id == instance_id && s.revision == revision)
@@ -204,17 +215,19 @@ impl SnapshotRepository for FakeSnapshotRepository {
     }
 
     async fn save(&self, snapshot: &PublishedSnapshot) -> Result<(), DomainError> {
-        let mut store = self.snapshots.write().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire write lock".into())
-        })?;
+        let mut store = self
+            .snapshots
+            .write()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire write lock".into()))?;
         store.push(snapshot.clone());
         Ok(())
     }
 
     async fn delete_by_instance(&self, instance_id: DocumentInstanceId) -> Result<(), DomainError> {
-        let mut store = self.snapshots.write().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire write lock".into())
-        })?;
+        let mut store = self
+            .snapshots
+            .write()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire write lock".into()))?;
         store.retain(|s| s.instance_id != instance_id);
         Ok(())
     }
@@ -242,30 +255,34 @@ impl FakeRoleRepository {
 
 impl RoleRepository for FakeRoleRepository {
     async fn find_by_id(&self, id: RoleId) -> Result<Option<Role>, DomainError> {
-        let store = self.roles.read().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire read lock".into())
-        })?;
+        let store = self
+            .roles
+            .read()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
         Ok(store.get(&id).cloned())
     }
 
     async fn find_by_name(&self, name: &str) -> Result<Option<Role>, DomainError> {
-        let store = self.roles.read().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire read lock".into())
-        })?;
+        let store = self
+            .roles
+            .read()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
         Ok(store.values().find(|r| r.name == name).cloned())
     }
 
     async fn find_all(&self) -> Result<Vec<Role>, DomainError> {
-        let store = self.roles.read().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire read lock".into())
-        })?;
+        let store = self
+            .roles
+            .read()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
         Ok(store.values().cloned().collect())
     }
 
     async fn save(&self, role: &Role) -> Result<(), DomainError> {
-        let mut store = self.roles.write().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire write lock".into())
-        })?;
+        let mut store = self
+            .roles
+            .write()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire write lock".into()))?;
         store.insert(role.id, role.clone());
         Ok(())
     }
@@ -285,9 +302,10 @@ impl FakeUserRoleAssignmentRepository {
 
 impl UserRoleAssignmentRepository for FakeUserRoleAssignmentRepository {
     async fn find_by_user(&self, user_id: &UserId) -> Result<Vec<UserRoleAssignment>, DomainError> {
-        let store = self.assignments.read().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire read lock".into())
-        })?;
+        let store = self
+            .assignments
+            .read()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
         Ok(store
             .iter()
             .filter(|a| a.user_id == *user_id)
@@ -296,24 +314,27 @@ impl UserRoleAssignmentRepository for FakeUserRoleAssignmentRepository {
     }
 
     async fn exists_admin(&self, admin_role_id: RoleId) -> Result<bool, DomainError> {
-        let store = self.assignments.read().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire read lock".into())
-        })?;
+        let store = self
+            .assignments
+            .read()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
         Ok(store.iter().any(|a| a.role_id == admin_role_id))
     }
 
     async fn save(&self, assignment: &UserRoleAssignment) -> Result<(), DomainError> {
-        let mut store = self.assignments.write().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire write lock".into())
-        })?;
+        let mut store = self
+            .assignments
+            .write()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire write lock".into()))?;
         store.push(assignment.clone());
         Ok(())
     }
 
     async fn delete(&self, id: UserRoleAssignmentId) -> Result<(), DomainError> {
-        let mut store = self.assignments.write().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire write lock".into())
-        })?;
+        let mut store = self
+            .assignments
+            .write()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire write lock".into()))?;
         store.retain(|a| a.id != id);
         Ok(())
     }
@@ -333,16 +354,18 @@ impl FakeAccessRequestRepository {
 
 impl AccessRequestRepository for FakeAccessRequestRepository {
     async fn find_by_id(&self, id: AccessRequestId) -> Result<Option<AccessRequest>, DomainError> {
-        let store = self.requests.read().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire read lock".into())
-        })?;
+        let store = self
+            .requests
+            .read()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
         Ok(store.get(&id).cloned())
     }
 
     async fn find_by_user(&self, user_id: &UserId) -> Result<Option<AccessRequest>, DomainError> {
-        let store = self.requests.read().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire read lock".into())
-        })?;
+        let store = self
+            .requests
+            .read()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
         Ok(store
             .values()
             .find(|r| r.user_id == *user_id && r.is_active())
@@ -350,20 +373,27 @@ impl AccessRequestRepository for FakeAccessRequestRepository {
     }
 
     async fn find_pending(&self) -> Result<Vec<AccessRequest>, DomainError> {
-        let store = self.requests.read().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire read lock".into())
-        })?;
+        let store = self
+            .requests
+            .read()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
         Ok(store
             .values()
-            .filter(|r| matches!(r.status, domain::entities::access_request::AccessRequestStatus::Pending))
+            .filter(|r| {
+                matches!(
+                    r.status,
+                    domain::entities::access_request::AccessRequestStatus::Pending
+                )
+            })
             .cloned()
             .collect())
     }
 
     async fn save(&self, request: &AccessRequest) -> Result<(), DomainError> {
-        let mut store = self.requests.write().map_err(|_| {
-            DomainError::Unauthorized("failed to acquire write lock".into())
-        })?;
+        let mut store = self
+            .requests
+            .write()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire write lock".into()))?;
         store.insert(request.id, request.clone());
         Ok(())
     }

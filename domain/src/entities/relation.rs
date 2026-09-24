@@ -60,26 +60,26 @@ impl Relation {
         }
     }
 
-    pub fn view_for(&self, type_id: DocumentTypeId) -> Option<RelationView> {
-        if type_id == self.owner_type {
+    pub fn view_for(&self, type_id: &DocumentTypeId) -> Option<RelationView> {
+        if type_id == &self.owner_type {
             if self.inverse.is_some() {
                 Some(RelationView::OwnerSide {
                     attr: self.owner_attr.clone(),
                     kind: self.owner_kind,
-                    other_type: self.target_type,
+                    other_type: self.target_type.clone(),
                 })
             } else {
                 Some(RelationView::Unidirectional {
                     attr: self.owner_attr.clone(),
                     kind: self.owner_kind,
-                    target_type: self.target_type,
+                    target_type: self.target_type.clone(),
                 })
             }
-        } else if type_id == self.target_type {
+        } else if type_id == &self.target_type {
             self.inverse.as_ref().map(|inv| RelationView::InverseSide {
                 attr: inv.inverse_attr.clone(),
                 kind: self.inverse_kind().expect("derived inverse kind"),
-                other_type: self.owner_type,
+                other_type: self.owner_type.clone(),
             })
         } else {
             None
@@ -92,10 +92,16 @@ mod tests {
     use super::*;
     use uuid::Uuid;
 
-    fn make_test_ids() -> (DocumentTypeId, DocumentTypeId, RelationId, AttributeId, AttributeId) {
+    fn make_test_ids() -> (
+        DocumentTypeId,
+        DocumentTypeId,
+        RelationId,
+        AttributeId,
+        AttributeId,
+    ) {
         (
-            DocumentTypeId::new(Uuid::now_v7()),
-            DocumentTypeId::new(Uuid::now_v7()),
+            DocumentTypeId::try_new("article").unwrap(),
+            DocumentTypeId::try_new("tag").unwrap(),
             RelationId::new(Uuid::now_v7()),
             AttributeId::try_new("tags").unwrap(),
             AttributeId::try_new("articles").unwrap(),
@@ -107,14 +113,14 @@ mod tests {
         let (owner_type, target_type, id, owner_attr, inverse_attr) = make_test_ids();
         let relation = Relation {
             id,
-            owner_type,
+            owner_type: owner_type.clone(),
             owner_attr: owner_attr.clone(),
             owner_kind: OwnerRelationKind::HasMany,
-            target_type,
+            target_type: target_type.clone(),
             inverse: Some(RelationInverse { inverse_attr }),
         };
 
-        let view = relation.view_for(owner_type);
+        let view = relation.view_for(&owner_type);
         assert_eq!(
             view,
             Some(RelationView::OwnerSide {
@@ -130,16 +136,16 @@ mod tests {
         let (owner_type, target_type, id, owner_attr, inverse_attr) = make_test_ids();
         let relation = Relation {
             id,
-            owner_type,
+            owner_type: owner_type.clone(),
             owner_attr,
             owner_kind: OwnerRelationKind::HasMany,
-            target_type,
+            target_type: target_type.clone(),
             inverse: Some(RelationInverse {
                 inverse_attr: inverse_attr.clone(),
             }),
         };
 
-        let view = relation.view_for(target_type);
+        let view = relation.view_for(&target_type);
         assert_eq!(
             view,
             Some(RelationView::InverseSide {
@@ -155,31 +161,31 @@ mod tests {
         let (owner_type, target_type, id, owner_attr, _) = make_test_ids();
         let relation = Relation {
             id,
-            owner_type,
+            owner_type: owner_type.clone(),
             owner_attr: owner_attr.clone(),
             owner_kind: OwnerRelationKind::HasOne,
-            target_type,
+            target_type: target_type.clone(),
             inverse: None,
         };
 
-        let view = relation.view_for(owner_type);
+        let view = relation.view_for(&owner_type);
         assert_eq!(
             view,
             Some(RelationView::Unidirectional {
                 attr: owner_attr,
                 kind: OwnerRelationKind::HasOne,
-                target_type,
+                target_type: target_type.clone(),
             })
         );
 
         // Target type in unidirectional has no relation view
-        assert_eq!(relation.view_for(target_type), None);
+        assert_eq!(relation.view_for(&target_type), None);
     }
 
     #[test]
     fn test_view_for_unrelated_type() {
         let (owner_type, target_type, id, owner_attr, _) = make_test_ids();
-        let unrelated = DocumentTypeId::new(Uuid::now_v7());
+        let unrelated = DocumentTypeId::try_new("author").unwrap();
         let relation = Relation {
             id,
             owner_type,
@@ -189,7 +195,7 @@ mod tests {
             inverse: None,
         };
 
-        assert_eq!(relation.view_for(unrelated), None);
+        assert_eq!(relation.view_for(&unrelated), None);
     }
 
     #[test]
@@ -204,7 +210,10 @@ mod tests {
             inverse: Some(RelationInverse { inverse_attr }),
         };
 
-        assert_eq!(relation.inverse_kind(), Some(InverseRelationKind::BelongsToMany));
+        assert_eq!(
+            relation.inverse_kind(),
+            Some(InverseRelationKind::BelongsToMany)
+        );
     }
 
     #[test]
@@ -219,7 +228,10 @@ mod tests {
             inverse: Some(RelationInverse { inverse_attr }),
         };
 
-        assert_eq!(relation.inverse_kind(), Some(InverseRelationKind::BelongsToOne));
+        assert_eq!(
+            relation.inverse_kind(),
+            Some(InverseRelationKind::BelongsToOne)
+        );
     }
 
     #[test]

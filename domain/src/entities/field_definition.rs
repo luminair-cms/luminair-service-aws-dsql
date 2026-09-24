@@ -30,14 +30,12 @@ impl FieldConstraint {
                     | FieldType::Email
                     | FieldType::Url
             ),
-            FieldConstraint::MinInteger(_) | FieldConstraint::MaxInteger(_) => matches!(
-                ft,
-                FieldType::Primitive(PrimitiveType::Integer(_))
-            ),
-            FieldConstraint::MinDecimal(_) | FieldConstraint::MaxDecimal(_) => matches!(
-                ft,
-                FieldType::Primitive(PrimitiveType::Decimal { .. })
-            ),
+            FieldConstraint::MinInteger(_) | FieldConstraint::MaxInteger(_) => {
+                matches!(ft, FieldType::Primitive(PrimitiveType::Integer(_)))
+            }
+            FieldConstraint::MinDecimal(_) | FieldConstraint::MaxDecimal(_) => {
+                matches!(ft, FieldType::Primitive(PrimitiveType::Decimal { .. }))
+            }
         }
     }
 }
@@ -68,7 +66,11 @@ mod tests {
     #[test]
     fn test_constraint_applicable_pattern_on_integer() {
         let constraint = FieldConstraint::Pattern("^[a-z]+$".to_string());
-        assert!(!constraint.is_applicable_for(&FieldType::Primitive(PrimitiveType::Integer(IntegerSize::I32))));
+        assert!(
+            !constraint.is_applicable_for(&FieldType::Primitive(PrimitiveType::Integer(
+                IntegerSize::I32
+            )))
+        );
         assert!(!constraint.is_applicable_for(&FieldType::Primitive(PrimitiveType::Boolean)));
         assert!(!constraint.is_applicable_for(&FieldType::Json));
     }
@@ -88,11 +90,18 @@ mod tests {
     fn test_constraint_min_max_on_decimal() {
         let min_c = FieldConstraint::MinDecimal(Decimal::new(0, 0));
         let max_c = FieldConstraint::MaxDecimal(Decimal::new(100, 0));
-        let dec_type = FieldType::Primitive(PrimitiveType::Decimal { precision: 10, scale: 2 });
+        let dec_type = FieldType::Primitive(PrimitiveType::Decimal {
+            precision: 10,
+            scale: 2,
+        });
 
         assert!(min_c.is_applicable_for(&dec_type));
         assert!(max_c.is_applicable_for(&dec_type));
-        assert!(!min_c.is_applicable_for(&FieldType::Primitive(PrimitiveType::Integer(IntegerSize::I32))));
+        assert!(
+            !min_c.is_applicable_for(&FieldType::Primitive(PrimitiveType::Integer(
+                IntegerSize::I32
+            )))
+        );
     }
 
     #[test]

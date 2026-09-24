@@ -83,34 +83,35 @@ mod tests {
     use uuid::Uuid;
 
     fn make_test_instance(owner: &UserId) -> (DocumentTypeId, DocumentInstance) {
-        let type_id = DocumentTypeId::new(Uuid::now_v7());
-        let instance = DocumentInstance::new(type_id, Some(owner.clone()), Utc::now());
+        let type_id = DocumentTypeId::try_new("article").unwrap();
+        let instance = DocumentInstance::new(type_id.clone(), Some(owner.clone()), Utc::now());
         (type_id, instance)
     }
 
     #[test]
     fn test_system_caller_has_all_permissions() {
         let ctx = CallerContext::system();
-        let type_id = DocumentTypeId::new(Uuid::now_v7());
+        let type_id = DocumentTypeId::try_new("article").unwrap();
 
         assert!(ctx.can(&Permission::ManageSchema, None));
         assert!(ctx.can(&Permission::ManageRoles, None));
         assert!(ctx.can(&Permission::ManageUsers, None));
-        assert!(ctx.can(&Permission::CreateDocument(Some(type_id)), None));
+        assert!(ctx.can(&Permission::CreateDocument(Some(type_id.clone())), None));
         assert!(ctx.can(&Permission::PublishDocument(Some(type_id)), None));
 
-        assert!(ctx
-            .check_permission(&Permission::ManageSchema, None)
-            .is_ok());
+        assert!(
+            ctx.check_permission(&Permission::ManageSchema, None)
+                .is_ok()
+        );
     }
 
     #[test]
     fn test_check_permission_denied_returns_unauthorized() {
         let user_id = UserId::try_new("user-reader").expect("valid user");
         let ctx = CallerContext::new(user_id.clone(), Vec::new());
-        let type_id = DocumentTypeId::new(Uuid::now_v7());
+        let type_id = DocumentTypeId::try_new("article").unwrap();
 
-        let res = ctx.check_permission(&Permission::DeleteDocument(Some(type_id)), None);
+        let res = ctx.check_permission(&Permission::DeleteDocument(Some(type_id.clone())), None);
         match res {
             Err(ApplicationError::Unauthorized {
                 user_id: err_user,
@@ -130,27 +131,42 @@ mod tests {
         let (type_id, instance) = make_test_instance(&owner);
 
         // Owner may read and update without any role
-        assert!(ctx.can(&Permission::UpdateDocument(Some(type_id)), Some(&instance)));
-        assert!(ctx.can(&Permission::ReadDocument(Some(type_id)), Some(&instance)));
-        assert!(ctx.check_permission(&Permission::UpdateDocument(Some(type_id)), Some(&instance)).is_ok());
+        assert!(ctx.can(
+            &Permission::UpdateDocument(Some(type_id.clone())),
+            Some(&instance)
+        ));
+        assert!(ctx.can(
+            &Permission::ReadDocument(Some(type_id.clone())),
+            Some(&instance)
+        ));
+        assert!(
+            ctx.check_permission(
+                &Permission::UpdateDocument(Some(type_id.clone())),
+                Some(&instance)
+            )
+            .is_ok()
+        );
         // Publish and Delete require explicit RBAC — owner rule does not apply
-        assert!(!ctx.can(&Permission::PublishDocument(Some(type_id)), Some(&instance)));
+        assert!(!ctx.can(
+            &Permission::PublishDocument(Some(type_id.clone())),
+            Some(&instance)
+        ));
         assert!(!ctx.can(&Permission::DeleteDocument(Some(type_id)), Some(&instance)));
     }
 
     #[test]
     fn test_rbac_allows_action_with_role() {
         let user = UserId::try_new("user-editor").expect("valid user");
-        let type_id = DocumentTypeId::new(Uuid::now_v7());
+        let type_id = DocumentTypeId::try_new("article").unwrap();
         let role = Role {
             id: RoleId::new(Uuid::now_v7()),
             name: "editor".to_string(),
             description: None,
-            permissions: vec![Permission::CreateDocument(Some(type_id))],
+            permissions: vec![Permission::CreateDocument(Some(type_id.clone()))],
         };
         let ctx = CallerContext::new(user, vec![role]);
 
-        assert!(ctx.can(&Permission::CreateDocument(Some(type_id)), None));
+        assert!(ctx.can(&Permission::CreateDocument(Some(type_id.clone())), None));
         assert!(!ctx.can(&Permission::DeleteDocument(Some(type_id)), None));
     }
 }

@@ -54,12 +54,11 @@ impl Role {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uuid::Uuid;
 
     #[test]
     fn test_permission_matches_wildcard_and_exact() {
-        let type_a = DocumentTypeId::new(Uuid::now_v7());
-        let type_b = DocumentTypeId::new(Uuid::now_v7());
+        let type_a = DocumentTypeId::try_new("article").unwrap();
+        let type_b = DocumentTypeId::try_new("author").unwrap();
 
         let wildcard = Permission::ReadDocument(None);
         let exact_a = Permission::ReadDocument(Some(type_a));

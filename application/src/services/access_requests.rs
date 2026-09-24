@@ -64,11 +64,7 @@ where
     U: UserRoleAssignmentRepository + 'static,
     R: RoleRepository + 'static,
 {
-    pub fn new(
-        access_request_repo: Arc<A>,
-        assignment_repo: Arc<U>,
-        role_repo: Arc<R>,
-    ) -> Self {
+    pub fn new(access_request_repo: Arc<A>, assignment_repo: Arc<U>, role_repo: Arc<R>) -> Self {
         Self {
             access_request_repo,
             assignment_repo,
@@ -88,10 +84,7 @@ where
         cmd: SubmitAccessRequestCommand,
     ) -> Result<AccessRequest, ApplicationError> {
         // Enforce invariant: at most one active (Pending or Approved) request per user
-        if let Some(existing) = self
-            .access_request_repo
-            .find_by_user(&cmd.user_id)
-            .await?
+        if let Some(existing) = self.access_request_repo.find_by_user(&cmd.user_id).await?
             && existing.is_active()
         {
             return Err(ApplicationError::Domain(
@@ -115,9 +108,9 @@ where
             .access_request_repo
             .find_by_id(cmd.request_id)
             .await?
-            .ok_or(ApplicationError::Domain(DomainError::AccessRequestNotFound(
-                cmd.request_id,
-            )))?;
+            .ok_or(ApplicationError::Domain(
+                DomainError::AccessRequestNotFound(cmd.request_id),
+            ))?;
 
         // Validate that all assigned roles exist
         for role_id in &cmd.role_ids {
@@ -129,11 +122,7 @@ where
             }
         }
 
-        let assignments = request.approve(
-            caller.user_id.clone(),
-            cmd.role_ids,
-            Utc::now(),
-        )?;
+        let assignments = request.approve(caller.user_id.clone(), cmd.role_ids, Utc::now())?;
 
         // Persist generated assignments
         for assignment in &assignments {
@@ -157,9 +146,9 @@ where
             .access_request_repo
             .find_by_id(cmd.request_id)
             .await?
-            .ok_or(ApplicationError::Domain(DomainError::AccessRequestNotFound(
-                cmd.request_id,
-            )))?;
+            .ok_or(ApplicationError::Domain(
+                DomainError::AccessRequestNotFound(cmd.request_id),
+            ))?;
 
         request.reject(caller.user_id.clone(), cmd.reason, Utc::now())?;
         self.access_request_repo.save(&request).await?;
@@ -176,9 +165,9 @@ where
             .access_request_repo
             .find_by_id(request_id)
             .await?
-            .ok_or(ApplicationError::Domain(DomainError::AccessRequestNotFound(
-                request_id,
-            )))?;
+            .ok_or(ApplicationError::Domain(
+                DomainError::AccessRequestNotFound(request_id),
+            ))?;
 
         // Requester can view their own request; other users require ManageUsers
         if request.user_id != caller.user_id {
@@ -224,7 +213,6 @@ mod tests {
         let access_repo = Arc::new(FakeAccessRequestRepository::new());
         let assignment_repo = Arc::new(FakeUserRoleAssignmentRepository::new());
 
-
         let editor_role = Role {
             id: RoleId::new(Uuid::now_v7()),
             name: "editor".to_string(),
@@ -233,11 +221,7 @@ mod tests {
         };
         let role_repo = Arc::new(FakeRoleRepository::new().with_role(editor_role.clone()));
 
-        let service = AccessRequestsServiceImpl::new(
-            access_repo,
-            assignment_repo,
-            role_repo,
-        );
+        let service = AccessRequestsServiceImpl::new(access_repo, assignment_repo, role_repo);
 
         let admin = CallerContext::system();
         (service, admin, editor_role)
@@ -320,11 +304,7 @@ mod tests {
         assert!(matches!(updated_req.status, AccessRequestStatus::Approved));
         assert_eq!(updated_req.assigned_roles, vec![role.id]);
 
-        let stored_assignments = service
-            .assignment_repo
-            .find_by_user(&user)
-            .await
-            .unwrap();
+        let stored_assignments = service.assignment_repo.find_by_user(&user).await.unwrap();
         assert_eq!(stored_assignments.len(), 1);
     }
 
@@ -346,7 +326,10 @@ mod tests {
             )
             .await;
 
-        assert!(matches!(res, Err(ApplicationError::NotFound { entity: "Role", .. })));
+        assert!(matches!(
+            res,
+            Err(ApplicationError::NotFound { entity: "Role", .. })
+        ));
     }
 
     #[tokio::test]
@@ -392,7 +375,10 @@ mod tests {
                 ApproveAccessRequestCommand::new(req.id, vec![role.id]),
             )
             .await;
-        assert!(matches!(approve_res, Err(ApplicationError::Unauthorized { .. })));
+        assert!(matches!(
+            approve_res,
+            Err(ApplicationError::Unauthorized { .. })
+        ));
 
         let reject_res = service
             .reject(
@@ -400,10 +386,16 @@ mod tests {
                 RejectAccessRequestCommand::new(req.id, None),
             )
             .await;
-        assert!(matches!(reject_res, Err(ApplicationError::Unauthorized { .. })));
+        assert!(matches!(
+            reject_res,
+            Err(ApplicationError::Unauthorized { .. })
+        ));
 
         let list_res = service.list_pending(&normal_caller).await;
-        assert!(matches!(list_res, Err(ApplicationError::Unauthorized { .. })));
+        assert!(matches!(
+            list_res,
+            Err(ApplicationError::Unauthorized { .. })
+        ));
     }
 
     #[tokio::test]

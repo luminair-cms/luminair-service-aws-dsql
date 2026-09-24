@@ -75,7 +75,10 @@ mod tests {
 
     #[test]
     fn test_sql_type_name_text() {
-        assert_eq!(FieldType::Primitive(PrimitiveType::Text).sql_type_name(), "TEXT");
+        assert_eq!(
+            FieldType::Primitive(PrimitiveType::Text).sql_type_name(),
+            "TEXT"
+        );
     }
 
     #[test]
@@ -116,8 +119,11 @@ mod tests {
 
         for variant in all_variants {
             let sql_name = variant.sql_type_name();
-            assert!(!sql_name.is_empty(), "Type {:?} produced empty SQL type name", variant);
+            assert!(
+                !sql_name.is_empty(),
+                "Type {:?} produced empty SQL type name",
+                variant
+            );
         }
     }
 }
-

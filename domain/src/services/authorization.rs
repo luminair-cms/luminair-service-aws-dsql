@@ -43,8 +43,8 @@ mod tests {
     fn make_test_fixture() -> (UserId, UserId, DocumentTypeId, DocumentInstance) {
         let owner = UserId::try_new("owner_user").unwrap();
         let other = UserId::try_new("other_user").unwrap();
-        let type_id = DocumentTypeId::new(Uuid::now_v7());
-        let instance = DocumentInstance::new(type_id, Some(owner.clone()), Utc::now());
+        let type_id = DocumentTypeId::try_new("article").unwrap();
+        let instance = DocumentInstance::new(type_id.clone(), Some(owner.clone()), Utc::now());
         (owner, other, type_id, instance)
     }
 
@@ -52,28 +52,48 @@ mod tests {
     fn test_owner_allowed_read_and_update() {
         let (owner, _, type_id, instance) = make_test_fixture();
         // Owner may read and update without any role
-        assert!(AuthorizationService::can(&owner, &Permission::ReadDocument(Some(type_id)), Some(&instance), &[]));
-        assert!(AuthorizationService::can(&owner, &Permission::UpdateDocument(Some(type_id)), Some(&instance), &[]));
+        assert!(AuthorizationService::can(
+            &owner,
+            &Permission::ReadDocument(Some(type_id.clone())),
+            Some(&instance),
+            &[]
+        ));
+        assert!(AuthorizationService::can(
+            &owner,
+            &Permission::UpdateDocument(Some(type_id)),
+            Some(&instance),
+            &[]
+        ));
     }
 
     #[test]
     fn test_owner_denied_publish_without_role() {
         let (owner, _, type_id, instance) = make_test_fixture();
         // Owner cannot publish without an explicit role
-        assert!(!AuthorizationService::can(&owner, &Permission::PublishDocument(Some(type_id)), Some(&instance), &[]));
+        assert!(!AuthorizationService::can(
+            &owner,
+            &Permission::PublishDocument(Some(type_id)),
+            Some(&instance),
+            &[]
+        ));
     }
 
     #[test]
     fn test_owner_denied_delete_without_role() {
         let (owner, _, type_id, instance) = make_test_fixture();
         // Owner cannot delete without an explicit role
-        assert!(!AuthorizationService::can(&owner, &Permission::DeleteDocument(Some(type_id)), Some(&instance), &[]));
+        assert!(!AuthorizationService::can(
+            &owner,
+            &Permission::DeleteDocument(Some(type_id)),
+            Some(&instance),
+            &[]
+        ));
     }
 
     #[test]
     fn test_rbac_explicit_permission_granted() {
         let (_, other, type_id, instance) = make_test_fixture();
-        let action = Permission::ReadDocument(Some(type_id));
+        let action = Permission::ReadDocument(Some(type_id.clone()));
         let role = Role {
             id: crate::value_objects::RoleId::new(Uuid::now_v7()),
             name: "reader".into(),
@@ -81,7 +101,12 @@ mod tests {
             permissions: vec![Permission::ReadDocument(Some(type_id))],
         };
 
-        assert!(AuthorizationService::can(&other, &action, Some(&instance), &[role]));
+        assert!(AuthorizationService::can(
+            &other,
+            &action,
+            Some(&instance),
+            &[role]
+        ));
     }
 
     #[test]
@@ -95,13 +120,18 @@ mod tests {
             permissions: vec![Permission::ReadDocument(None)], // wildcard
         };
 
-        assert!(AuthorizationService::can(&other, &action, Some(&instance), &[role]));
+        assert!(AuthorizationService::can(
+            &other,
+            &action,
+            Some(&instance),
+            &[role]
+        ));
     }
 
     #[test]
     fn test_rbac_wrong_permission_denied() {
         let (_, other, type_id, instance) = make_test_fixture();
-        let action = Permission::DeleteDocument(Some(type_id));
+        let action = Permission::DeleteDocument(Some(type_id.clone()));
         let role = Role {
             id: crate::value_objects::RoleId::new(Uuid::now_v7()),
             name: "reader".into(),
@@ -109,14 +139,24 @@ mod tests {
             description: None,
         };
 
-        assert!(!AuthorizationService::can(&other, &action, Some(&instance), &[role]));
+        assert!(!AuthorizationService::can(
+            &other,
+            &action,
+            Some(&instance),
+            &[role]
+        ));
     }
 
     #[test]
     fn test_no_roles_denied() {
         let (_, other, type_id, instance) = make_test_fixture();
         let action = Permission::ReadDocument(Some(type_id));
-        assert!(!AuthorizationService::can(&other, &action, Some(&instance), &[]));
+        assert!(!AuthorizationService::can(
+            &other,
+            &action,
+            Some(&instance),
+            &[]
+        ));
     }
 
     #[test]
@@ -139,6 +179,11 @@ mod tests {
         };
 
         let action = Permission::DeleteDocument(Some(type_id));
-        assert!(AuthorizationService::can(&other, &action, Some(&instance), &[admin_role]));
+        assert!(AuthorizationService::can(
+            &other,
+            &action,
+            Some(&instance),
+            &[admin_role]
+        ));
     }
 }

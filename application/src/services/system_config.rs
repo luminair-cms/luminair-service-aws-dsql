@@ -70,10 +70,7 @@ mod tests {
         let service = SystemConfigServiceImpl::new(config.clone());
 
         assert_eq!(service.get_config().id, config.id);
-        assert_eq!(
-            service.get_config().default_locale,
-            config.default_locale
-        );
+        assert_eq!(service.get_config().default_locale, config.default_locale);
     }
 
     #[test]

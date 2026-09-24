@@ -1,8 +1,8 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::value_objects::{AttributeId, DocumentTypeId};
 use super::field_definition::FieldDefinition;
+use crate::value_objects::{AttributeId, DocumentTypeId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DocumentKind {

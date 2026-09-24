@@ -76,10 +76,7 @@ pub struct CreateDocumentCommand {
 }
 
 impl CreateDocumentCommand {
-    pub fn new(
-        document_type: DocumentTypeId,
-        fields: HashMap<AttributeId, ContentValue>,
-    ) -> Self {
+    pub fn new(document_type: DocumentTypeId, fields: HashMap<AttributeId, ContentValue>) -> Self {
         Self {
             document_type,
             fields,
@@ -122,10 +119,7 @@ pub struct DeleteDocumentCommand {
 }
 
 impl DeleteDocumentCommand {
-    pub fn new(
-        document_instance_id: DocumentInstanceId,
-        document_type: DocumentTypeId,
-    ) -> Self {
+    pub fn new(document_instance_id: DocumentInstanceId, document_type: DocumentTypeId) -> Self {
         Self {
             document_instance_id,
             document_type,
@@ -143,10 +137,7 @@ pub struct PublishDocumentCommand {
 }
 
 impl PublishDocumentCommand {
-    pub fn new(
-        document_instance_id: DocumentInstanceId,
-        document_type: DocumentTypeId,
-    ) -> Self {
+    pub fn new(document_instance_id: DocumentInstanceId, document_type: DocumentTypeId) -> Self {
         Self {
             document_instance_id,
             document_type,
@@ -164,10 +155,7 @@ pub struct UnpublishDocumentCommand {
 }
 
 impl UnpublishDocumentCommand {
-    pub fn new(
-        document_instance_id: DocumentInstanceId,
-        document_type: DocumentTypeId,
-    ) -> Self {
+    pub fn new(document_instance_id: DocumentInstanceId, document_type: DocumentTypeId) -> Self {
         Self {
             document_instance_id,
             document_type,
@@ -185,10 +173,7 @@ pub struct ListSnapshotsCommand {
 }
 
 impl ListSnapshotsCommand {
-    pub fn new(
-        document_type: DocumentTypeId,
-        document_instance_id: DocumentInstanceId,
-    ) -> Self {
+    pub fn new(document_type: DocumentTypeId, document_instance_id: DocumentInstanceId) -> Self {
         Self {
             document_type,
             document_instance_id,
@@ -203,9 +188,9 @@ mod tests {
 
     #[test]
     fn test_find_documents_command_builder() {
-        let type_id = DocumentTypeId::new(Uuid::now_v7());
+        let type_id = DocumentTypeId::try_new("article").unwrap();
         let attr = AttributeId::try_new("author").unwrap();
-        let cmd = FindDocumentsCommand::new(type_id, Pagination::default())
+        let cmd = FindDocumentsCommand::new(type_id.clone(), Pagination::default())
             .with_populate(vec![attr.clone()]);
 
         assert_eq!(cmd.document_type, type_id);
@@ -216,11 +201,11 @@ mod tests {
 
     #[test]
     fn test_find_by_id_command_builder() {
-        let type_id = DocumentTypeId::new(Uuid::now_v7());
+        let type_id = DocumentTypeId::try_new("article").unwrap();
         let id = DocumentInstanceId::new(Uuid::now_v7());
         let attr = AttributeId::try_new("category").unwrap();
 
-        let cmd = FindByIdCommand::new(type_id, id).with_populate(vec![attr.clone()]);
+        let cmd = FindByIdCommand::new(type_id.clone(), id).with_populate(vec![attr.clone()]);
         assert_eq!(cmd.document_type, type_id);
         assert_eq!(cmd.document_instance_id, id);
         assert_eq!(cmd.populate, Some(vec![attr]));
@@ -228,22 +213,22 @@ mod tests {
 
     #[test]
     fn test_document_lifecycle_commands() {
-        let type_id = DocumentTypeId::new(Uuid::now_v7());
+        let type_id = DocumentTypeId::try_new("article").unwrap();
         let id = DocumentInstanceId::new(Uuid::now_v7());
 
-        let create = CreateDocumentCommand::new(type_id, HashMap::new());
+        let create = CreateDocumentCommand::new(type_id.clone(), HashMap::new());
         assert_eq!(create.document_type, type_id);
         assert!(create.fields.is_empty());
 
-        let update = UpdateDocumentCommand::new(id, type_id, HashMap::new());
+        let update = UpdateDocumentCommand::new(id, type_id.clone(), HashMap::new());
         assert_eq!(update.document_instance_id, id);
         assert_eq!(update.document_type, type_id);
 
-        let delete = DeleteDocumentCommand::new(id, type_id);
+        let delete = DeleteDocumentCommand::new(id, type_id.clone());
         assert_eq!(delete.document_instance_id, id);
         assert_eq!(delete.document_type, type_id);
 
-        let pub_cmd = PublishDocumentCommand::new(id, type_id);
+        let pub_cmd = PublishDocumentCommand::new(id, type_id.clone());
         assert_eq!(pub_cmd.document_instance_id, id);
 
         let unpub_cmd = UnpublishDocumentCommand::new(id, type_id);

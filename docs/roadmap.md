@@ -22,7 +22,7 @@ flowchart TD
 
     subgraph CrateInfra["infrastructure crate (Adapters & Composition Root)"]
         subgraph SubgraphDB["Database Setup & Schema Provisioning"]
-            StaticMig["3A. Static SQL Migrations<br/>(Snapshots, Roles, Users, Config)"]:::planned
+            StaticMig["3A. Static SQL Migrations<br/>(Snapshots, Roles, Users)"]:::done
             SchemaLoader["3B. JSON Schema Loader & Dynamic DDL<br/>(Per-Type Tables, Singleton Indexes, Drift Check)"]:::planned
         end
 
@@ -87,15 +87,19 @@ flowchart TD
 
 Consists of two complementary mechanisms aligned with [ADR-006](./adr/ADR-006-schema-loading.md) and [ADR-007](./adr/ADR-007-persistence-model.md):
 
-#### 3A. Static SQL Migrations (`infrastructure/migrations/`)
+#### 3A. Static SQL Migrations (`infrastructure/migrations/`) — Complete
 * **Objective**: Versioned schema for all non-dynamic system tables using `sqlx migrate`.
 * **Tables**:
-  * `document_snapshots`: Immutable JSONB revision store.
-  * `system_config`: System-level locales and default locale.
-  * `roles`, `role_permissions`: Role definitions and permission grants.
+  * `document_snapshots`: Immutable JSONB revision store with unique `(instance_id, revision)`.
+  * `roles`: Role definitions with unique `name`.
+  * `role_permissions`: Permission grants with `NULLS NOT DISTINCT` constraint and `VARCHAR(64)` for kebab-case `document_type_id`.
   * `user_role_assignments`: OIDC `sub` (`user_id`) to role mapping.
-  * `access_requests`: User onboarding and access requests.
+  * `access_requests`: User onboarding queue with partial unique index for active requests.
   * `shadow_users`: Local cache of verified OIDC identities.
+  *(Note: `system_config` table was eliminated in favor of immutable startup JSON, matching ADR-006).*
+* **Seed Data**: Built-in `admin`, `editor`, and `viewer` roles with deterministic UUID v7 identifiers.
+* **Compatibility**: Zero sequences/serial columns, all migration files start with `-- no-transaction` for AWS DSQL.
+* **Deliverable**: `MIGRATOR` embedded runner, deterministic role constants, and 7 unit/integration tests verifying DSQL rules.
 
 #### 3B. JSON Schema Loader & Dynamic DDL (`infrastructure/src/schema_loader/`)
 * **Objective**: Startup synchronization of document schemas from JSON files to in-memory `SchemaRegistry` and physical database tables.

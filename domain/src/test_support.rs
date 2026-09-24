@@ -13,7 +13,7 @@ use crate::types::field_type::{FieldType, PrimitiveType};
 use crate::value_objects::{AttributeId, DocumentInstanceId, DocumentTypeId, LocaleId, UserId};
 
 pub fn document_type_id() -> DocumentTypeId {
-    DocumentTypeId::new(Uuid::from_u128(0x01932c4a_0000_7000_8000_000000000001))
+    DocumentTypeId::try_new("test-article").expect("valid test type id")
 }
 
 pub fn instance_id() -> DocumentInstanceId {
@@ -57,8 +57,8 @@ pub fn make_document_type(kind: DocumentKind) -> DocumentType {
         kind,
         info: DocumentTypeInfo {
             title: "Test Type".into(),
-            singular_name: "test_type".into(),
-            plural_name: "test_types".into(),
+            singular_name: "test-type".into(),
+            plural_name: "test-types".into(),
             description: None,
         },
         options: DocumentTypeOptions {
@@ -72,10 +72,7 @@ pub fn make_instance(type_id: DocumentTypeId) -> DocumentInstance {
     DocumentInstance::new(type_id, Some(user_id()), now())
 }
 
-pub fn make_schema_registry(
-    types: Vec<DocumentType>,
-    relations: Vec<Relation>,
-) -> SchemaRegistry {
+pub fn make_schema_registry(types: Vec<DocumentType>, relations: Vec<Relation>) -> SchemaRegistry {
     SchemaRegistry::new(types, relations)
 }
 
@@ -87,13 +84,13 @@ mod tests {
     fn test_factories_create_valid_domain_objects() {
         let dt = make_document_type(DocumentKind::Collection);
         assert_eq!(dt.id, document_type_id());
-        assert_eq!(dt.info.plural_name, "test_types");
+        assert_eq!(dt.info.plural_name, "test-types");
 
-        let inst = make_instance(dt.id);
+        let inst = make_instance(dt.id.clone());
         assert_eq!(inst.document_type_id, dt.id);
         assert!(inst.is_owned_by(&user_id()));
 
         let reg = make_schema_registry(vec![dt], vec![]);
-        assert!(reg.find_type_by_name("test_types").is_some());
+        assert!(reg.find_type_by_name("test-types").is_some());
     }
 }

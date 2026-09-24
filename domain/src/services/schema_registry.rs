@@ -90,8 +90,8 @@ impl SchemaRegistry {
         let mut by_name = HashMap::new();
         let mut type_map = HashMap::new();
         for dt in types {
-            by_name.insert(dt.info.plural_name.clone(), dt.id);
-            type_map.insert(dt.id, dt);
+            by_name.insert(dt.info.plural_name.clone(), dt.id.clone());
+            type_map.insert(dt.id.clone(), dt);
         }
         let mut relation_map = HashMap::new();
         for r in relations {
@@ -104,15 +104,17 @@ impl SchemaRegistry {
         }
     }
 
-    pub fn find_type(&self, id: DocumentTypeId) -> Option<&DocumentType> {
-        self.types.get(&id)
+    pub fn find_type(&self, id: &DocumentTypeId) -> Option<&DocumentType> {
+        self.types.get(id)
     }
 
     pub fn find_type_by_name(&self, plural_name: &str) -> Option<&DocumentType> {
-        self.by_name.get(plural_name).and_then(|id| self.types.get(id))
+        self.by_name
+            .get(plural_name)
+            .and_then(|id| self.types.get(id))
     }
 
-    pub fn find_relations_for(&self, type_id: DocumentTypeId) -> Vec<RelationView> {
+    pub fn find_relations_for(&self, type_id: &DocumentTypeId) -> Vec<RelationView> {
         self.relations
             .values()
             .filter_map(|r| r.view_for(type_id))
@@ -125,13 +127,13 @@ impl SchemaRegistry {
 
     pub fn validate_content(
         &self,
-        type_id: DocumentTypeId,
+        type_id: &DocumentTypeId,
         content: &DocumentContent,
         system_config: &SystemConfig,
     ) -> Result<(), Vec<DomainError>> {
         let doc_type = match self.find_type(type_id) {
             Some(dt) => dt,
-            None => return Err(vec![DomainError::DocumentTypeNotFound(type_id)]),
+            None => return Err(vec![DomainError::DocumentTypeNotFound(type_id.clone())]),
         };
 
         let mut errors = Vec::new();
@@ -214,7 +216,7 @@ mod tests {
     use crate::value_objects::{AttributeId, LocaleId, SystemConfigId};
 
     fn make_test_setup() -> (DocumentType, SystemConfig) {
-        let type_id = DocumentTypeId::new(Uuid::now_v7());
+        let type_id = DocumentTypeId::try_new("article").unwrap();
         let title_attr = AttributeId::try_new("title").unwrap();
         let body_attr = AttributeId::try_new("body").unwrap();
 
@@ -270,17 +272,17 @@ mod tests {
     #[test]
     fn test_find_type_by_id() {
         let (doc_type, _) = make_test_setup();
-        let id = doc_type.id;
+        let id = doc_type.id.clone();
         let registry = SchemaRegistry::new(vec![doc_type], vec![]);
-        assert!(registry.find_type(id).is_some());
+        assert!(registry.find_type(&id).is_some());
     }
 
     #[test]
     fn test_find_type_unknown_id() {
         let (doc_type, _) = make_test_setup();
         let registry = SchemaRegistry::new(vec![doc_type], vec![]);
-        let unknown = DocumentTypeId::new(Uuid::now_v7());
-        assert!(registry.find_type(unknown).is_none());
+        let unknown = DocumentTypeId::try_new("unknown-type").unwrap();
+        assert!(registry.find_type(&unknown).is_none());
     }
 
     #[test]
@@ -293,11 +295,11 @@ mod tests {
 
     #[test]
     fn test_find_relations_for_owner() {
-        let owner_type = DocumentTypeId::new(Uuid::now_v7());
-        let target_type = DocumentTypeId::new(Uuid::now_v7());
+        let owner_type = DocumentTypeId::try_new("owner-type").unwrap();
+        let target_type = DocumentTypeId::try_new("target-type").unwrap();
         let rel = Relation {
             id: RelationId::new(Uuid::now_v7()),
-            owner_type,
+            owner_type: owner_type.clone(),
             owner_attr: AttributeId::try_new("tags").unwrap(),
             owner_kind: OwnerRelationKind::HasMany,
             target_type,
@@ -305,28 +307,28 @@ mod tests {
         };
 
         let registry = SchemaRegistry::new(vec![], vec![rel]);
-        let views = registry.find_relations_for(owner_type);
+        let views = registry.find_relations_for(&owner_type);
         assert_eq!(views.len(), 1);
         assert!(matches!(views[0], RelationView::Unidirectional { .. }));
     }
 
     #[test]
     fn test_find_relations_for_inverse() {
-        let owner_type = DocumentTypeId::new(Uuid::now_v7());
-        let target_type = DocumentTypeId::new(Uuid::now_v7());
+        let owner_type = DocumentTypeId::try_new("owner-type").unwrap();
+        let target_type = DocumentTypeId::try_new("target-type").unwrap();
         let rel = Relation {
             id: RelationId::new(Uuid::now_v7()),
             owner_type,
             owner_attr: AttributeId::try_new("tags").unwrap(),
             owner_kind: OwnerRelationKind::HasMany,
-            target_type,
+            target_type: target_type.clone(),
             inverse: Some(RelationInverse {
                 inverse_attr: AttributeId::try_new("articles").unwrap(),
             }),
         };
 
         let registry = SchemaRegistry::new(vec![], vec![rel]);
-        let views = registry.find_relations_for(target_type);
+        let views = registry.find_relations_for(&target_type);
         assert_eq!(views.len(), 1);
         assert!(matches!(views[0], RelationView::InverseSide { .. }));
     }
@@ -334,7 +336,7 @@ mod tests {
     #[test]
     fn test_validate_content_correct() {
         let (doc_type, config) = make_test_setup();
-        let type_id = doc_type.id;
+        let type_id = doc_type.id.clone();
         let registry = SchemaRegistry::new(vec![doc_type], vec![]);
 
         let mut fields = HashMap::new();
@@ -356,13 +358,17 @@ mod tests {
             },
         };
 
-        assert!(registry.validate_content(type_id, &content, &config).is_ok());
+        assert!(
+            registry
+                .validate_content(&type_id, &content, &config)
+                .is_ok()
+        );
     }
 
     #[test]
     fn test_validate_content_wrong_type() {
         let (doc_type, config) = make_test_setup();
-        let type_id = doc_type.id;
+        let type_id = doc_type.id.clone();
         let registry = SchemaRegistry::new(vec![doc_type], vec![]);
 
         let mut fields = HashMap::new();
@@ -379,7 +385,9 @@ mod tests {
             },
         };
 
-        let errs = registry.validate_content(type_id, &content, &config).unwrap_err();
+        let errs = registry
+            .validate_content(&type_id, &content, &config)
+            .unwrap_err();
         assert_eq!(errs.len(), 1);
         assert!(matches!(errs[0], DomainError::InvalidFieldValue { .. }));
     }
@@ -387,7 +395,7 @@ mod tests {
     #[test]
     fn test_validate_content_unknown_locale() {
         let (doc_type, config) = make_test_setup();
-        let type_id = doc_type.id;
+        let type_id = doc_type.id.clone();
         let registry = SchemaRegistry::new(vec![doc_type], vec![]);
 
         let mut fields = HashMap::new();
@@ -410,7 +418,9 @@ mod tests {
             },
         };
 
-        let errs = registry.validate_content(type_id, &content, &config).unwrap_err();
+        let errs = registry
+            .validate_content(&type_id, &content, &config)
+            .unwrap_err();
         assert_eq!(errs.len(), 1);
         assert!(matches!(&errs[0], DomainError::UnknownLocale(loc) if *loc == fr));
     }
@@ -420,7 +430,7 @@ mod tests {
         use crate::entities::field_definition::FieldConstraint;
         use crate::types::field_type::PrimitiveType;
 
-        let type_id = DocumentTypeId::new(Uuid::now_v7());
+        let type_id = DocumentTypeId::try_new("slugged").unwrap();
         let slug_attr = AttributeId::try_new("slug").unwrap();
         let mut fields_def = IndexMap::new();
         fields_def.insert(
@@ -434,7 +444,7 @@ mod tests {
             },
         );
         let doc_type = DocumentType {
-            id: type_id,
+            id: type_id.clone(),
             kind: crate::entities::document_type::DocumentKind::Collection,
             info: crate::entities::document_type::DocumentTypeInfo {
                 title: "Slugged".into(),
@@ -442,11 +452,14 @@ mod tests {
                 plural_name: "sluggeds".into(),
                 description: None,
             },
-            options: crate::entities::document_type::DocumentTypeOptions { draft_and_publish: true },
+            options: crate::entities::document_type::DocumentTypeOptions {
+                draft_and_publish: true,
+            },
             fields: fields_def,
         };
         let en = LocaleId::try_new("en").unwrap();
-        let config = SystemConfig::new(SystemConfigId::new(Uuid::now_v7()), vec![en.clone()], en).unwrap();
+        let config =
+            SystemConfig::new(SystemConfigId::new(Uuid::now_v7()), vec![en.clone()], en).unwrap();
         let registry = SchemaRegistry::new(vec![doc_type], vec![]);
 
         let mut content_fields = HashMap::new();
@@ -456,9 +469,13 @@ mod tests {
         );
         let content = DocumentContent {
             fields: content_fields,
-            publication_state: PublicationState::Draft { last_published_revision: None },
+            publication_state: PublicationState::Draft {
+                last_published_revision: None,
+            },
         };
-        let errs = registry.validate_content(type_id, &content, &config).unwrap_err();
+        let errs = registry
+            .validate_content(&type_id, &content, &config)
+            .unwrap_err();
         assert_eq!(errs.len(), 1);
         assert!(matches!(errs[0], DomainError::InvalidFieldValue { .. }));
         assert!(errs[0].to_string().contains("below minimum"));
@@ -469,7 +486,7 @@ mod tests {
         use crate::entities::field_definition::FieldConstraint;
         use crate::types::field_type::PrimitiveType;
 
-        let type_id = DocumentTypeId::new(Uuid::now_v7());
+        let type_id = DocumentTypeId::try_new("slugged").unwrap();
         let slug_attr = AttributeId::try_new("slug").unwrap();
         let mut fields_def = IndexMap::new();
         fields_def.insert(
@@ -483,7 +500,7 @@ mod tests {
             },
         );
         let doc_type = DocumentType {
-            id: type_id,
+            id: type_id.clone(),
             kind: crate::entities::document_type::DocumentKind::Collection,
             info: crate::entities::document_type::DocumentTypeInfo {
                 title: "Slugged".into(),
@@ -491,23 +508,32 @@ mod tests {
                 plural_name: "sluggeds".into(),
                 description: None,
             },
-            options: crate::entities::document_type::DocumentTypeOptions { draft_and_publish: true },
+            options: crate::entities::document_type::DocumentTypeOptions {
+                draft_and_publish: true,
+            },
             fields: fields_def,
         };
         let en = LocaleId::try_new("en").unwrap();
-        let config = SystemConfig::new(SystemConfigId::new(Uuid::now_v7()), vec![en.clone()], en).unwrap();
+        let config =
+            SystemConfig::new(SystemConfigId::new(Uuid::now_v7()), vec![en.clone()], en).unwrap();
         let registry = SchemaRegistry::new(vec![doc_type], vec![]);
 
         let mut content_fields = HashMap::new();
         content_fields.insert(
             slug_attr.clone(),
-            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text("INVALID SLUG!".into()))),
+            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text(
+                "INVALID SLUG!".into(),
+            ))),
         );
         let content = DocumentContent {
             fields: content_fields,
-            publication_state: PublicationState::Draft { last_published_revision: None },
+            publication_state: PublicationState::Draft {
+                last_published_revision: None,
+            },
         };
-        let errs = registry.validate_content(type_id, &content, &config).unwrap_err();
+        let errs = registry
+            .validate_content(&type_id, &content, &config)
+            .unwrap_err();
         assert_eq!(errs.len(), 1);
         assert!(errs[0].to_string().contains("does not match pattern"));
     }
@@ -516,7 +542,7 @@ mod tests {
     fn test_validate_content_multiple_errors_returned() {
         // Both title (wrong type) and body (unknown locale) fail → both errors should be returned
         let (doc_type, config) = make_test_setup();
-        let type_id = doc_type.id;
+        let type_id = doc_type.id.clone();
         let registry = SchemaRegistry::new(vec![doc_type], vec![]);
 
         let mut fields = HashMap::new();
@@ -535,10 +561,14 @@ mod tests {
 
         let content = DocumentContent {
             fields,
-            publication_state: PublicationState::Draft { last_published_revision: None },
+            publication_state: PublicationState::Draft {
+                last_published_revision: None,
+            },
         };
 
-        let errs = registry.validate_content(type_id, &content, &config).unwrap_err();
+        let errs = registry
+            .validate_content(&type_id, &content, &config)
+            .unwrap_err();
         // Must return ALL errors, not just the first one
         assert_eq!(errs.len(), 2, "expected 2 errors but got {:?}", errs);
     }

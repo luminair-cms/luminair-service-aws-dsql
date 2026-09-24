@@ -91,6 +91,17 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
 - **Static SystemConfig**: `SystemConfig` (supported locales, default locale) is loaded once at startup alongside the schema (ADR-004, ADR-006). It is immutable at runtime, eliminating the need for `UpdateLocalesCommand` or runtime locale mutation APIs.
 - **Shared In-Memory Test Fakes**: `application::test_support` exposes fast, thread-safe in-memory repositories using `std::sync::RwLock` for deterministic testing across the workspace.
 
+## 2026-09-24 — Unified Naming Conventions & REST Routing Strategy (ADR-008)
+
+- **`DocumentTypeId` is `DocumentTypeId(String)`**: Replaces `Uuid`. Identity is derived directly from `singular_name` (e.g. `"partner-booking-category"`). Schema JSON files no longer need arbitrary hand-generated UUIDs.
+- **Strict Kebab-Case Standard**: All user-defined domain identifiers (`DocumentTypeId`, `singular_name`, `plural_name`, `AttributeId`, relation attributes) must strictly match `^[a-z][a-z0-9]*(-[a-z0-9]+)*$`. Underscores (`_`), uppercase letters, and double hyphens (`--`) are rejected.
+- **Clean REST URLs**:
+  - Collections use `{plural_name}`: `/api/{plural_name}` and `/api/{plural_name}/{id}`.
+  - Singletons use `{singular_name}`: `/api/{singular_name}` (no instance UUID in path; direct object envelope without pagination).
+  - Schema introspection uses `singular_name` as ID: `/api/schema/document-types/{id}`.
+- **Startup Anti-Collision Guard**: Validates that no collection `plural_name` can ever collide with a singleton `singular_name`.
+- **SQL Persistence Mapping**: Domain `kebab-case` maps deterministically to SQL `snake_case` (e.g. `partner-booking-categories` -> `partner_booking_categories`, `title-header` -> `title_header`).
+
 ---
 
 > **AI agents**: when you make a non-obvious decision during implementation, append an entry here.

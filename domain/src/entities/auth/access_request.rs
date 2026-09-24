@@ -2,9 +2,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::user_role_assignment::UserRoleAssignment;
 use crate::errors::DomainError;
 use crate::value_objects::{AccessRequestId, RoleId, UserId, UserRoleAssignmentId};
-use super::user_role_assignment::UserRoleAssignment;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AccessRequestStatus {
@@ -110,7 +110,12 @@ mod tests {
     fn make_test_request() -> (AccessRequest, UserId, DateTime<Utc>) {
         let user = UserId::try_new("user_req").unwrap();
         let now = Utc::now();
-        let req = AccessRequest::new(user.clone(), Some("u@example.com".into()), Some("User".into()), now);
+        let req = AccessRequest::new(
+            user.clone(),
+            Some("u@example.com".into()),
+            Some("User".into()),
+            now,
+        );
         (req, user, now)
     }
 
@@ -161,7 +166,10 @@ mod tests {
 
         req.approve(admin.clone(), vec![role], now).unwrap();
         let second = req.approve(admin, vec![role], now);
-        assert!(matches!(second, Err(DomainError::InvalidStateTransition { .. })));
+        assert!(matches!(
+            second,
+            Err(DomainError::InvalidStateTransition { .. })
+        ));
     }
 
     #[test]
@@ -169,7 +177,8 @@ mod tests {
         let (mut req, _, now) = make_test_request();
         let admin = UserId::try_new("admin").unwrap();
 
-        req.reject(admin.clone(), Some("Not authorized".into()), now).unwrap();
+        req.reject(admin.clone(), Some("Not authorized".into()), now)
+            .unwrap();
         assert_eq!(
             req.status,
             AccessRequestStatus::Rejected {
@@ -188,7 +197,10 @@ mod tests {
 
         req.approve(admin.clone(), vec![role], now).unwrap();
         let res = req.reject(admin, None, now);
-        assert!(matches!(res, Err(DomainError::InvalidStateTransition { .. })));
+        assert!(matches!(
+            res,
+            Err(DomainError::InvalidStateTransition { .. })
+        ));
     }
 
     #[test]

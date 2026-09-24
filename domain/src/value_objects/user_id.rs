@@ -3,7 +3,19 @@ use nutype::nutype;
 #[nutype(
     sanitize(trim),
     validate(not_empty, len_char_max = 255),
-    derive(Debug, Clone, PartialEq, Eq, Hash, Display, Serialize, Deserialize, AsRef, Deref, Into)
+    derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        Hash,
+        Display,
+        Serialize,
+        Deserialize,
+        AsRef,
+        Deref,
+        Into
+    )
 )]
 pub struct UserId(String);
 

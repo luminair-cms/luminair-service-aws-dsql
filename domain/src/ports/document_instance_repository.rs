@@ -38,8 +38,10 @@ pub struct FieldFilter {
 
 /// A mapping of relation attribute to a map of parent instance IDs and their related instances:
 /// AttributeId -> (ParentInstanceId -> Vec<RelatedInstance>)
-pub type RelationMap =
-    std::collections::HashMap<AttributeId, std::collections::HashMap<DocumentInstanceId, Vec<DocumentInstance>>>;
+pub type RelationMap = std::collections::HashMap<
+    AttributeId,
+    std::collections::HashMap<DocumentInstanceId, Vec<DocumentInstance>>,
+>;
 
 pub trait DocumentInstanceRepository: Send + Sync {
     /// Loads a single document instance by its type's table and its unique ID.

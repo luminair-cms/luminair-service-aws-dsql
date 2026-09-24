@@ -3,7 +3,19 @@ use nutype::nutype;
 #[nutype(
     sanitize(trim),
     validate(not_empty, len_char_max = 16, regex = r"^[a-z]{2,3}(-[A-Z]{2})?$"),
-    derive(Debug, Clone, PartialEq, Eq, Hash, Display, Serialize, Deserialize, AsRef, Deref, Into)
+    derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        Hash,
+        Display,
+        Serialize,
+        Deserialize,
+        AsRef,
+        Deref,
+        Into
+    )
 )]
 pub struct LocaleId(String);
 
