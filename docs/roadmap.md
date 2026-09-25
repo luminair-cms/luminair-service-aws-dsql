@@ -23,7 +23,7 @@ flowchart TD
     subgraph CrateInfra["infrastructure crate (Adapters & Composition Root)"]
         subgraph SubgraphDB["Database Setup & Schema Provisioning"]
             StaticMig["3A. Static SQL Migrations<br/>(Snapshots, Roles, Users)"]:::done
-            SchemaLoader["3B. JSON Schema Loader & Dynamic DDL<br/>(Per-Type Tables, Singleton Indexes, Drift Check)"]:::planned
+            SchemaLoader["3B. JSON Schema Loader & Dynamic DDL<br/>(Per-Type Tables, Singleton Indexes, Drift Check)"]:::done
         end
 
         Persistence["4. Persistence Layer<br/>(SQLx Repositories for DSQL/PostgreSQL)"]:::planned
@@ -121,12 +121,12 @@ Consists of two complementary mechanisms aligned with [ADR-006](./adr/ADR-006-sc
 * **Objective**: Provide concrete PostgreSQL and AWS DSQL implementations of the repository port traits defined in `domain::ports`.
 * **Key Implementations**:
   * `SqlxDocumentInstanceRepository`:
-    * Constructs dynamic SQL queries targeting the per-type table `{plural_name}` resolved from `SchemaRegistry`.
+    * Constructs dynamic SQL queries targeting the per-type table `{plural_name}` (or `{singular_name}` for SingleTypes) resolved from `SchemaRegistry`.
     * Serializes/deserializes inline JSONB fields (`LocalizedText`, `Json`).
     * Implements pagination (`Page<T>`) and field filtering.
   * `SqlxSnapshotRepository`: Queries and appends to `document_snapshots`.
-  * `SqlxSystemConfigRepository`: Loads and updates the singleton `system_config` row.
   * `SqlxRoleRepository`, `SqlxUserRoleAssignmentRepository`, `SqlxAccessRequestRepository`.
+  *(Note: System configuration is loaded at startup from `schema/system-config.json` and served in-memory by `SystemConfigService`, requiring no database persistence per ADR-004 and ADR-006).*
 * **Testing Strategy**: Real database integration tests using `#[sqlx::test]` against PostgreSQL test instances.
 
 ---
@@ -152,11 +152,12 @@ Consists of two complementary mechanisms aligned with [ADR-006](./adr/ADR-006-sc
 * **Crate**: `infrastructure`
 * **Objective**: Expose HTTP endpoints adhering to [`docs/api.md`](./api.md).
 * **Key Endpoints**:
-  * `/api/{plural_name}`: CRUD operations for document instances (filtered by permissions).
-  * `/api/{plural_name}/{id}/publish`: Publish workflow endpoint.
-  * `/api/{plural_name}/{id}/unpublish`: Unpublish workflow endpoint.
-  * `/api/{plural_name}/{id}/snapshots`: Revision history.
-  * `/api/access-requests`: Submit, review, and approve access requests.
+  * `/api/{plural_name}`: CRUD operations for collection instances (filtered by permissions).
+  * `/api/{singular_name}`: Direct CRUD operations for singleton instances (clean URLs without instance UUIDs).
+  * `/api/{plural_name}/{id}/publish` and `/api/{singular_name}/publish`: Publish workflow endpoints.
+  * `/api/{plural_name}/{id}/unpublish` and `/api/{singular_name}/unpublish`: Unpublish workflow endpoints.
+  * `/api/{plural_name}/{id}/snapshots` and `/api/{singular_name}/snapshots`: Revision history.
+  * `/api/access-requests` and `/api/admin/access-requests`: Submit, review, and approve access requests.
   * `/api/schema/document-types`: Read-only introspection of active schema types.
 * **Standard Infrastructure**:
   * Request validation via `validator`.
@@ -174,7 +175,7 @@ Consists of two complementary mechanisms aligned with [ADR-006](./adr/ADR-006-sc
      * *Option A*: Decoupled SPA (React / TypeScript / Tailwind) deployed to S3 / CloudFront.
      * *Option B*: Fullstack Rust (Leptos / Yew) or Server-Side Rendering (HTMX / Askama).
   2. Review trade-offs (deployment simplicity vs developer ergonomics vs AWS serverless cost).
-  3. Formulate and accept **ADR-008: UI Architecture**.
+  3. Formulate and accept **ADR-010: UI Architecture**.
   4. Implement UI based on accepted ADR.
 
 ---
@@ -184,9 +185,9 @@ Consists of two complementary mechanisms aligned with [ADR-006](./adr/ADR-006-sc
 | Step | Milestone | Output | Primary Verification |
 |---|---|---|---|
 | **1** | Application Layer | Use cases, command handlers, test fakes | ✅ Completed (35 tests, RPITIT async) |
-| **2** | Static Migrations | `infrastructure/migrations/*.sql` | `sqlx migrate run` |
-| **3** | Schema Loader & DDL | JSON parser, DDL generator, drift check | Unit tests with mock JSON schemas |
+| **2** | Static Migrations | `infrastructure/migrations/*.sql` | ✅ Completed (7 tests, DSQL verified) |
+| **3** | Schema Loader & DDL | `infrastructure/src/schema_loader/` | ✅ Completed (36 tests, sea-query dynamic DDL) |
 | **4** | SQLx Repositories | Concrete repository adapters | `#[sqlx::test]` integration tests |
 | **5** | Auth & Bootstrap | JWT middleware, admin bootstrap hook | Integration tests with mock tokens |
 | **6** | REST API Handlers | Axum router, controllers, problem+json | `axum-test` HTTP test suite |
-| **7** | UI Architecture | ADR-008 + dashboard implementation | E2E browser / cypress tests |
+| **7** | UI Architecture | ADR-010 + dashboard implementation | E2E browser / cypress tests |

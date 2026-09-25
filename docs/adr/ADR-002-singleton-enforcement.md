@@ -1,9 +1,17 @@
 # ADR-002: SingleType Enforcement Strategy
 
-- **Status**: Accepted — Option C
-- **Date**: 2026-09-17 · Revised: 2026-09-21 · Accepted: 2026-09-21
+- **Status**: Superseded by [ADR-007](./ADR-007-persistence-model.md), [ADR-008](./ADR-008-naming-conventions-and-routing.md), and [ADR-009](./ADR-009-dynamic-schema-migration-and-relation-persistence.md)
+- **Date**: 2026-09-17 · Revised: 2026-09-21 · Accepted: 2026-09-21 · Superseded: 2026-09-25
 - **Deciders**: Dmitri Astafiev
 - **Research**: [docs/research/domain-model-design.md](../research/domain-model-design.md)
+
+> [!NOTE]
+> **Superseded Context**:
+> While the **Option C defence-in-depth principle** (Application Service guard + Database constraint) was accepted and remains active, the specific physical schema described in this ADR assumed a shared `document_instances(document_type_id)` table.
+> Under **ADR-007**, **ADR-008**, and **ADR-009**, each document type is provisioned with its own dedicated physical table:
+> - SingleTypes are mapped to dedicated tables named `{singular_name}` (e.g. `site_setting`).
+> - The DB constraint is enforced via a single-row constraint (`_singleton BOOLEAN NOT NULL DEFAULT TRUE CHECK (_singleton = TRUE)` and a unique index `uq_{table}_singleton ON {table} (_singleton)`).
+> - The application layer continues to perform read-before-write validation via `count_by_type` in `DocumentsService`.
 
 ## Context
 
@@ -113,20 +121,11 @@ Implementation cost is low: one use-case guard + one migration.
 
 ## Decision
 
-*Pending human approval — status: Proposed*
+Accepted Option C (defence in depth). Subsequently updated and superseded by ADR-007 / ADR-008 / ADR-009 for per-type table mapping.
 
 ## Consequences
 
-**If Option C is accepted**:
-- `DocumentType` struct: **no changes** — `kind: DocumentKind` field, same for all kinds
-- Add `DocumentInstanceRepository::exists_for_type(DocumentTypeId) → Result<bool>`
-- Application use-case `CreateDocumentInstance` checks `exists_for_type` before inserting
-- Migration adds partial unique index (see Option A SQL above)
-- `DomainError::SingleTypeAlreadyExists(DocumentTypeId)` added to domain error enum
-- Infrastructure maps unique constraint violation (`23505`) → `DomainError::SingleTypeAlreadyExists`
-
-## Follow-up Actions
-
-- [ ] Decide Option A / B / C
-- [ ] Confirm DSQL supports partial unique indexes (see [dsql-vs-postgres.md](../research/dsql-vs-postgres.md))
-- [ ] Add `exists_for_type` to `DocumentInstanceRepository` trait (domain crate)
+- `DocumentType` struct: **no changes** — `kind: DocumentKind` field, same for all kinds.
+- Application layer checks for single-instance presence before insertion.
+- Database enforces single-row invariant at the physical schema level.
+- `DomainError::SingleTypeAlreadyExists(DocumentTypeId)` represents violation of the singleton invariant.

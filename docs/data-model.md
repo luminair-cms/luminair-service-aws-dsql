@@ -10,7 +10,7 @@ AWS DSQL is a distributed, serverless relational database compatible with Postgr
 - **Distributed Transactions & OCC**: Optimistic concurrency control; retry on conflict (`409 Conflict` / code `40001` serialization failure).
 - **No DDL in Transactions**: All dynamic DDL migrations execute outside transaction blocks (`-- no-transaction` in static SQL, individual autocommit statements in dynamic DDL).
 - **Idempotent DDL**: Use `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`.
-- **Foreign Keys**: DSQL supports foreign keys; when dropping objects in destructive mode, drop constraints and child/junction tables first according to a topological dependency graph.
+- **Foreign Keys**: Static system tables (`role_permissions`, `user_role_assignments`) enforce referential integrity via physical SQL foreign keys (`REFERENCES roles(id) ON DELETE CASCADE`). Dynamic document tables and junction tables do not generate physical SQL `REFERENCES` constraints (to avoid distributed deadlocks, circular lock issues, and cross-shard operational constraints on AWS DSQL); they rely on indexed UUID columns and composite primary keys.
 
 ---
 
@@ -42,7 +42,7 @@ Defines attributes of a `DocumentType`.
 - **`required`**: `bool`.
 - **`unique`**: `bool`.
 - **`constraints`**: Vector of `FieldConstraint`:
-  - `MinLength(usize)` / `MaxLength(usize)`: Applicable to `Text`, `Uid`, `Email`, `Url`, and `LocalizedText` (evaluated per-locale on character count `chars().count()`).
+  - `MinLength(usize)` / `MaxLength(usize)`: Applicable to `Text`, `Uid`, and `LocalizedText` (evaluated per-locale on character count `chars().count()`). *Note: `Email` and `Url` are self-validating `nutype` value objects; length and pattern constraints are inapplicable.*
   - `Pattern(String)`: Regex matching for string-like fields.
   - `MinInteger(i64)` / `MaxInteger(i64)`: For `Integer` fields.
   - `MinDecimal(Decimal)` / `MaxDecimal(Decimal)`: For `Decimal` fields.
@@ -56,14 +56,14 @@ First-class domain entity modeling relationships between document types (ADR-004
 - **`target_type`**: `DocumentTypeId`.
 - **`inverse`**: `Option<RelationInverse>` with `inverse_attr: AttributeId` for bidirectional relations.
 
-### 2.4. `DocumentInstance` & `DocumentRevisionSnapshot`
+### 2.4. `DocumentInstance` & `DocumentSnapshot`
 - **`id`**: `DocumentInstanceId` (`Uuid` v7).
 - **`document_type_id`**: `DocumentTypeId`.
 - **`owner_id`**: `UserId`.
 - **`version`**: `i64` (OCC counter).
 - **`publication_state`**: `PublicationState::Draft { last_published_revision }` or `PublicationState::Published { revision }`.
 - **`content`**: `DocumentContent` (`fields: HashMap<AttributeId, ContentValue>`).
-- **`snapshots`**: When published, stores an immutable audit record in `document_revision_snapshots`.
+- **`snapshots`**: When published, stores an immutable audit record in `document_snapshots`.
 
 ### 2.5. RBAC & Auth Entities
 - **`Role`**: Builtin (`admin`, `editor`, `viewer`) and custom roles with permissions (`resource:action`).
@@ -77,11 +77,12 @@ First-class domain entity modeling relationships between document types (ADR-004
 
 ### 3.1. System Tables (Static SQL Migrations)
 Created via `infrastructure/migrations/`:
-- `roles`, `permissions`, `role_permissions`
-- `user_roles`
-- `access_requests`
-- `shadow_users`
-- `document_revision_snapshots`
+- `document_snapshots`: Immutable published revisions across all document types.
+- `roles`: RBAC role definitions (`admin`, `editor`, `viewer`, custom).
+- `role_permissions`: Granular and wildcard permission grants.
+- `user_role_assignments`: OIDC identity to role mapping.
+- `access_requests`: Self-service user onboarding queue.
+- `shadow_users`: Local cache of verified OIDC identities.
 
 ### 3.2. Dynamic User Tables & Naming Strategy
 Derived dynamically from `SchemaRegistry` (ADR-008, ADR-009):
@@ -98,14 +99,14 @@ Derived dynamically from `SchemaRegistry` (ADR-008, ADR-009):
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
   ```
-- **Relation Persistence**:
-  - **1:1 and N:1 (HasOne)**: Foreign key column on owner table: `{owner_attr}_id UUID REFERENCES {target_table}(id)`.
+- **Relation Persistence** (ADR-009):
+  - **1:1 and N:1 (HasOne)**: Stored as foreign key column on owner table: `{owner_attr}_id UUID` with index (unique index for 1:1, non-unique index for N:1). No physical SQL `REFERENCES` constraint is generated on dynamic tables for AWS DSQL.
   - **N:N (HasMany)**: Dedicated junction table using double underscore `__`:
     `{owner_table}__{owner_attr}`
     ```sql
     CREATE TABLE {owner_table}__{owner_attr} (
-        owner_id UUID NOT NULL REFERENCES {owner_table}(id) ON DELETE CASCADE,
-        target_id UUID NOT NULL REFERENCES {target_table}(id) ON DELETE CASCADE,
+        owner_id UUID NOT NULL,
+        target_id UUID NOT NULL,
         PRIMARY KEY (owner_id, target_id)
     );
     CREATE INDEX idx_{owner_table}__{owner_attr}_target ON {owner_table}__{owner_attr} (target_id);

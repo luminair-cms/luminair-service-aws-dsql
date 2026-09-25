@@ -19,7 +19,7 @@ luminair-service-aws-dsql/
 
 - **Contains**: entities, value objects, aggregates, domain events, repository *traits* (ports), domain errors
 - **Must NOT depend on**: `application`, `infrastructure`, any I/O crate (tokio, sqlx, axum …)
-- **Allowed deps**: `serde` (for serialisation traits only), `thiserror`, `uuid`, `chrono`
+- **Allowed deps**: `serde` (for serialisation traits only), `thiserror`, `uuid`, `chrono`, `nutype` (for domain value objects), `email_address` and `url` (for validation predicates), `indexmap` (for preserving declared attribute order), `rust_decimal` (for exact decimal representation)
 
 ### `application`
 
@@ -69,8 +69,11 @@ crates have no knowledge of any deployment environment.
 ### Portability contract
 
 - Repository traits are defined in `domain` — they are database-agnostic
-- `infrastructure` provides two concrete implementations: `SqlxPgRepository` (standard PG) and `DsqlRepository` (DSQL with IAM token rotation); selected via config at startup
-- Migrations use plain SQL; avoid DSQL-incompatible DDL (see research note) so the same migration files run on both standard PG and DSQL
+- `infrastructure` provides a single unified set of repository implementations (`SqlxDocumentInstanceRepository`, `SqlxRoleRepository`, etc.) targeting `sqlx::PgPool`
+- Database differences are isolated in the connection pool factory at startup:
+  - Local / CI / K8s: Standard PostgreSQL connection pool using `DATABASE_URL`
+  - AWS Aurora DSQL: Dynamic connection pool with IAM authentication token rotation (15-minute token lifecycle)
+- Migrations use plain SQL and `sea-query`; avoid DSQL-incompatible DDL (see research note and ADR-009) so schemas run identically on standard PG and DSQL
 - The binary is configured entirely through environment variables — no AWS SDK calls outside `infrastructure`
 
 ## UI (TBD)

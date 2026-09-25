@@ -54,16 +54,29 @@ DSQL uses **short-lived IAM authentication tokens** (valid ~15 minutes) instead 
 - The connection pool must support token rotation without full restart
 - Use the AWS SDK to generate tokens: `dsql_auth_token(endpoint, region)`
 
-### 5. PostgreSQL Feature Compatibility
+### 5. Foreign Key Constraints (Supported as of August 2026)
 
-DSQL is **not 100% PostgreSQL-compatible**. Known unsupported or limited features (verify against current AWS docs):
+As of August 2026, [Amazon Aurora DSQL officially supports foreign key constraints](https://aws.amazon.com/about-aws/whats-new/2026/08/aurora-dsql-foreign-key-constraints/).
+
+- **Supported Referential Actions**: `CASCADE`, `RESTRICT`, `NO ACTION`, `SET NULL`, `SET DEFAULT`, deferrable constraints, and `MATCH FULL` / `MATCH SIMPLE`.
+- **How it works with Optimistic Concurrency Control (OCC)**:
+  1. *Snapshot Verification*: When a transaction writes data, DSQL verifies that referenced rows exist in the transaction's start-time snapshot (or that no orphaned rows are created).
+  2. *Commit-Time KEY SHARE*: DSQL implicitly applies a `KEY SHARE` verification at commit time to detect if a concurrent transaction deleted or updated the referenced row.
+- **Operational Considerations & Limitations**:
+  - *Higher OCC Contention*: Under high write concurrency, foreign keys increase serialization conflicts (`40001`) because modifying referenced rows invalidates concurrent transactions writing referencing rows. Robust application retry with exponential backoff and jitter is mandatory.
+  - *Non-Transactional DDL*: Adding or dropping foreign keys via `ALTER TABLE ... ADD CONSTRAINT` cannot run in transaction blocks.
+  - *Topological DDL Dependency*: Referenced parent tables must be created before child tables, and dropping tables requires dropping foreign keys or child/junction tables first.
+
+### 6. PostgreSQL Feature Compatibility
+
+DSQL is **not 100% PostgreSQL-compatible**. Known status of key features:
 
 | Feature | DSQL support |
 |---|---|
-| Sequences / SERIAL | ❌ Not supported |
-| Transactional DDL | ❌ Not supported |
+| Sequences / SERIAL | ❌ Not supported (use UUID v7) |
+| Transactional DDL | ❌ Not supported (execute outside transactions) |
 | `LISTEN` / `NOTIFY` | ❌ Not supported |
-| Foreign keys | ⚠️ Supported but cross-shard FKs have constraints |
+| Foreign keys | ✅ Supported (August 2026; `CASCADE`, `RESTRICT`, `SET NULL`, `NO ACTION`) |
 | Full-text search | ⚠️ Limited — verify before use |
 | `pg_catalog` views | ⚠️ Partial |
 | Stored procedures | ✅ Basic support |
@@ -73,7 +86,7 @@ DSQL is **not 100% PostgreSQL-compatible**. Known unsupported or limited feature
 
 > **Always verify against current AWS DSQL release notes** — the service is actively evolving.
 
-### 6. sqlx Compatibility
+### 7. sqlx Compatibility
 
 `sqlx` works with DSQL via the PostgreSQL driver. Known considerations:
 
@@ -81,7 +94,7 @@ DSQL is **not 100% PostgreSQL-compatible**. Known unsupported or limited feature
 - Compile-time query checking (`sqlx prepare`) works if DSQL is reachable at build time; otherwise use offline mode (`.sqlx/` directory)
 - `#[sqlx::test]` requires a standard PostgreSQL instance for CI (DSQL may not be available in CI environment — use a local PG for unit/integration tests, DSQL only in staging/prod)
 
-### 7. Distributed Transactions
+### 8. Distributed Transactions
 
 DSQL supports distributed transactions across shards but with higher latency than single-shard operations.
 

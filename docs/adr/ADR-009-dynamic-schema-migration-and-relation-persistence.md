@@ -1,6 +1,6 @@
 # ADR-009: Dynamic Schema Migration, Drift Detection, and Relation Persistence Model
 
-- **Status**: `Proposed`
+- **Status**: `Accepted`
 - **Date**: 2026-09-24
 - **Deciders**: Dmitri Astafiev, Architecture & Core Engineering
 - **Consulted**: ADR-006 (Startup Schema Loading), ADR-007 (Persistence Model), ADR-008 (Naming Conventions & Routing)
@@ -17,8 +17,8 @@ While static system tables (`roles`, `user_role_assignments`, `access_requests`,
 3. Relations (1:1, 1:N, N:N) are established or updated.
 4. Physical database schemas in AWS Aurora DSQL / PostgreSQL may drift from the JSON declarations.
 
-Furthermore, AWS Aurora DSQL introduces strict operational constraints:
-- **No Foreign Key Constraints**: All referential integrity must be enforced at the application layer or via junction tables.
+Furthermore, AWS Aurora DSQL introduces specific architectural characteristics:
+- **Foreign Key Constraints (Supported August 2026)**: While Aurora DSQL supports foreign keys (`CASCADE`, `RESTRICT`, `SET NULL`, etc.), it validates them via commit-time `KEY SHARE` checks. High write concurrency on referencing rows can increase OCC serialization conflicts (`40001`). For dynamic schema relations, using indexed ID columns (`{attr}_id`) and junction tables avoids cross-shard lock amplification during mass CMS imports.
 - **No DDL inside Transactions**: `CREATE TABLE`, `ALTER TABLE`, and `CREATE INDEX` cannot execute inside a `BEGIN ... COMMIT` block.
 - **Client-Generated UUID v7**: Primary keys must be UUID v7; sequences (`SERIAL`, `BIGSERIAL`) are unsupported.
 
@@ -32,7 +32,7 @@ We must define:
 
 ## Decision Drivers
 
-- **AWS DSQL Compatibility**: Non-transactional DDL execution, zero foreign key constraints, zero sequences.
+- **AWS DSQL Compatibility**: Non-transactional DDL execution, minimized cross-table OCC write contention, zero sequences.
 - **Zero Memory & Allocation Redundancy**: Avoid duplicating string identifiers between map keys and internal struct fields (`TableDefinition.name`, `FieldDefinition.id`).
 - **Insertion Order Preservation**: In a CMS, field and column order defined in JSON schemas must be deterministic and preserved in UI and database definitions.
 - **Collision-Free Relation Persistence**: Consistent, collision-free naming for relation columns and junction tables.
@@ -141,7 +141,7 @@ pub enum MigrationStep {
 
 ### 6. Dependency Graph & Topologically Ordered Execution
 
-Because AWS DSQL has no foreign keys, table creation cannot deadlock on FK circularities. Operations are ordered topologically by dependency phase:
+Operations are ordered topologically by dependency phase:
 1. `CreateTable` (entity tables)
 2. `CreateTable` (junction tables)
 3. `AddColumn`
@@ -156,7 +156,7 @@ Each step generates a PostgreSQL DDL string via `sea-query::PostgresQueryBuilder
 ## Consequences
 
 ### Positive
-- **DSQL Ready**: Fully adheres to DSQL constraints (no FKs, no transaction blocks, UUID v7).
+- **DSQL & PostgreSQL Ready**: Fully adheres to DSQL non-transactional DDL and UUID v7 PKs while avoiding cross-table OCC lock contention.
 - **Memory Optimized**: Replaces bloated `HashMap<Key, StructWithKey>` with compact, order-preserving `IndexSet<T>`.
 - **Zero Ambiguity**: Clear naming rules for all relation types; no collisions due to `__` junction table standard.
 - **Production Safe**: Prevents accidental data loss through strict additive safety policy by default.

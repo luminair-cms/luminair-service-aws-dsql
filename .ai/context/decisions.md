@@ -125,6 +125,19 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
   - Serde aliases support `minimalLength`/`maximalLength`, `minimalInteger`/`maximalInteger`, `minimalDecimal`/`maximalDecimal`, and `minimum`/`maximum`.
   - Duplicate constraint definitions are safely deduplicated.
 
+## 2026-09-25 — Documentation Alignment & AWS Aurora DSQL Foreign Key Support
+
+- **Aurora DSQL Foreign Key Support (August 2026 Release)**:
+  - Aurora DSQL natively supports foreign keys (`CASCADE`, `RESTRICT`, `SET NULL`, `NO ACTION`, deferrable).
+  - Validation occurs via snapshot checks and commit-time `KEY SHARE`. Referencing writes contend with referenced modifications, increasing serialization conflict rates (`40001 OCC`).
+  - Static system tables (`role_permissions`, `user_role_assignments`) enforce integrity via physical SQL FKs (`REFERENCES roles(id) ON DELETE CASCADE`).
+  - Dynamic user document tables use indexed UUID columns (`{attr}_id`) and composite primary keys in junction tables to prevent cross-shard write contention and migration locks.
+- **Unified SQLx Repository Strategy**:
+  - `infrastructure` provides a single unified set of repositories targeting `sqlx::PgPool`. Database variations are isolated in the connection pool factory at startup (IAM token refresher for DSQL vs static connection string for PostgreSQL).
+- **ADR-002 Superseded & ADR-009 Accepted**:
+  - ADR-002 marked as superseded by ADR-007, ADR-008, and ADR-009 (singleton enforcement via dedicated per-type tables with single-row constraint index).
+  - ADR-009 marked as Accepted.
+
 ---
 
 > **AI agents**: when you make a non-obvious decision during implementation, append an entry here.
