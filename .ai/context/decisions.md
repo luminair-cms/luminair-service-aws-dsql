@@ -177,10 +177,26 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
   - Destruction: drop indexes $\rightarrow$ drop published link tables $\rightarrow$ drop draft link tables $\rightarrow$ drop published tables $\rightarrow$ drop entity tables $\rightarrow$ drop columns.
   - Construction: create entity tables $\rightarrow$ create published tables $\rightarrow$ create draft link tables $\rightarrow$ create published link tables $\rightarrow$ add columns $\rightarrow$ create indexes.
 
+## 2026-09-25 — Milestone 4: Persistence Layer Implementation (`infrastructure/src/repositories/`)
+
+- **Static System Repositories**:
+  - `SqlxRoleRepository`: Full CRUD for `roles` and `role_permissions` with all permission variants, transactional role updates with atomic permission synchronization.
+  - `SqlxUserRoleAssignmentRepository`: CRUD for `user_role_assignments` with role filtering and admin existence check.
+  - `SqlxAccessRequestRepository`: Full lifecycle management for `access_requests` (creation, pending retrieval, approval, rejection).
+- **Dynamic Document Repository (`SqlxDocumentInstanceRepository`)**:
+  - Dynamically binds and decodes all schema-driven field types: Text, Uid, Uuid, Integer (I16, I32, I64), Decimal, Boolean, Date, DateTime, Email, Url, LocalizedText (JSONB), Json (JSONB).
+  - **SingleType Singleton Enforcement**: Automatically handles singleton row update without creating duplicate rows.
+  - **Two-Table Publication Lifecycle**: Base draft row persisted to `{table}`; when published, upserted to `{table}__published`; when returned to draft, mirror row in `{table}__published` is removed (cascading deletes any published links via Aurora DSQL FK constraints).
+  - **Dual Link Tables**: Maintains working draft relations in `{owner}__{attr}_link` and published relations in `{owner}__{attr}_link__published` according to Option A and Variant 1 (Public Filter Principle).
+  - **Two-Phase Batch Relation Loading (`fetch_relations`)**: Efficiently loads relations for any set of parent documents by querying the universal link tables using `WHERE owner_id = ANY($1)` (or `WHERE target_id = ANY($1)` for inverse side) and batch-fetching child instances using `WHERE id = ANY($2)`, avoiding N+1 queries and Cartesian join explosions.
+  - **Querying & Pagination**: Dynamic query building with parameter binding for field equality filters and pagination.
+  - Comprehensive integration test suites in `tests/repositories_test.rs` and `tests/document_repository_test.rs`.
+
 ---
 
 > **AI agents**: when you make a non-obvious decision during implementation, append an entry here.
 > Format: `## YYYY-MM-DD — Topic` followed by bullet points.
+
 
 
 

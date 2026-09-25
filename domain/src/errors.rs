@@ -38,4 +38,7 @@ pub enum DomainError {
 
     #[error("invalid state transition: {reason}")]
     InvalidStateTransition { reason: String },
+
+    #[error("storage error: {0}")]
+    Storage(String),
 }

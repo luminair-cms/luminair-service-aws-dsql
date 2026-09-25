@@ -155,6 +155,22 @@ impl SchemaRegistry {
             .collect()
     }
 
+    pub fn all_relations(&self) -> impl Iterator<Item = &Relation> {
+        self.relations.values()
+    }
+
+    pub fn find_relation_for_attr(
+        &self,
+        type_id: &DocumentTypeId,
+        attr: &AttributeId,
+    ) -> Option<&Relation> {
+        self.relations.values().find(|r| {
+            (&r.owner_type == type_id && &r.owner_attr == attr)
+                || (&r.target_type == type_id
+                    && r.inverse.as_ref().map(|i| &i.inverse_attr) == Some(attr))
+        })
+    }
+
     pub fn type_names(&self) -> impl Iterator<Item = &str> {
         self.by_name.keys().map(|k| k.as_str())
     }

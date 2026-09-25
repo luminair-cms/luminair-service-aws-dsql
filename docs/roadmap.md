@@ -117,18 +117,20 @@ Consists of two complementary mechanisms aligned with [ADR-006](./adr/ADR-006-sc
 
 ---
 
-### Phase 4: Persistence Layer (`infrastructure/src/repositories/`)
+### Phase 4: Persistence Layer (`infrastructure/src/repositories/`) — Complete
 * **Crate**: `infrastructure`
 * **Objective**: Provide concrete PostgreSQL and AWS DSQL implementations of the repository port traits defined in `domain::ports`.
 * **Key Implementations**:
   * `SqlxDocumentInstanceRepository`:
     * Constructs dynamic SQL queries targeting the per-type table `{table}` (draft state) and `{table}__published` (published active state).
-    * Persists and queries relations via universal link tables `{owner}__{attr}_link`.
-    * Serializes/deserializes inline JSONB fields (`LocalizedText`, `Json`).
+    * Persists and queries relations via universal link tables `{owner}__{attr}_link` (draft) and `{owner}__{attr}_link__published` (published) following Option A (Dual Link Tables) and Variant 1 (Public Filter Principle).
+    * Serializes/deserializes dynamic typed columns and inline JSONB fields (`LocalizedText`, `Json`).
+    * Implements single-type singleton row update invariant on conflict.
+    * Implements two-phase batch relation enrichment (`fetch_relations`) for both owner and inverse directions without N+1 queries.
     * Implements pagination (`Page<T>`) and field filtering.
-  * `SqlxRoleRepository`, `SqlxUserRoleAssignmentRepository`, `SqlxAccessRequestRepository`.
+  * `SqlxRoleRepository`, `SqlxUserRoleAssignmentRepository`, `SqlxAccessRequestRepository`: Full transactional CRUD implementations for static system tables.
   *(Note: System configuration is loaded at startup from `schema/system-config.json` and served in-memory by `SystemConfigService`, requiring no database persistence per ADR-004 and ADR-006).*
-* **Testing Strategy**: Real database integration tests using `#[sqlx::test]` against PostgreSQL test instances.
+* **Testing Strategy**: Real database integration tests in `infrastructure/tests/repositories_test.rs` and `infrastructure/tests/document_repository_test.rs`.
 
 ---
 
