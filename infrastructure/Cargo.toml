@@ -18,6 +18,11 @@ thiserror = { workspace = true }
 indexmap = { workspace = true }
 rust_decimal = { workspace = true }
 sea-query = { workspace = true }
+axum = { workspace = true }
+jsonwebtoken = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
+axum-test = { workspace = true }
+

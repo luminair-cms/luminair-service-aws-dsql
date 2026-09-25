@@ -26,8 +26,8 @@ flowchart TD
             SchemaLoader["3B. JSON Schema Loader & Dynamic DDL<br/>(Per-Type Tables, Singleton Indexes, Drift Check)"]:::done
         end
 
-        Persistence["4. Persistence Layer<br/>(SQLx Repositories for DSQL/PostgreSQL)"]:::planned
-        Auth["5. Auth & Bootstrap<br/>(OIDC JWT Middleware, Startup Admin Seeding)"]:::planned
+        Persistence["4. Persistence Layer<br/>(SQLx Repositories for DSQL/PostgreSQL)"]:::done
+        Auth["5. Auth & Bootstrap<br/>(OIDC JWT Middleware, Startup Admin Seeding)"]:::done
         RestApi["6. REST API Surface<br/>(Axum Routes, DTOs, Error Envelopes)"]:::planned
     end
 
@@ -134,7 +134,7 @@ Consists of two complementary mechanisms aligned with [ADR-006](./adr/ADR-006-sc
 
 ---
 
-### Phase 5: Authentication, Security & Bootstrap (`infrastructure/src/auth/`)
+### Phase 5: Authentication, Security & Bootstrap (`infrastructure/src/auth/`) — Complete ✅
 * **Crate**: `infrastructure`
 * **Objective**: Authenticate incoming requests and manage initial administrative access per [ADR-005](./adr/ADR-005-auth-strategy.md).
 * **Key Components**:
@@ -190,7 +190,7 @@ Consists of two complementary mechanisms aligned with [ADR-006](./adr/ADR-006-sc
 | **1** | Application Layer | Use cases, command handlers, test fakes | ✅ Completed (35 tests, RPITIT async) |
 | **2** | Static Migrations | `infrastructure/migrations/*.sql` | ✅ Completed (7 tests, DSQL verified) |
 | **3** | Schema Loader & DDL | `infrastructure/src/schema_loader/` | ✅ Completed (36 tests, sea-query dynamic DDL) |
-| **4** | SQLx Repositories | Concrete repository adapters | `#[sqlx::test]` integration tests |
-| **5** | Auth & Bootstrap | JWT middleware, admin bootstrap hook | Integration tests with mock tokens |
+| **4** | SQLx Repositories | Concrete repository adapters | ✅ Completed (Integration tests) |
+| **5** | Auth & Bootstrap | JWT middleware, admin bootstrap hook | ✅ Completed (142 tests passing) |
 | **6** | REST API Handlers | Axum router, controllers, problem+json | `axum-test` HTTP test suite |
 | **7** | UI Architecture | ADR-010 + dashboard implementation | E2E browser / cypress tests |

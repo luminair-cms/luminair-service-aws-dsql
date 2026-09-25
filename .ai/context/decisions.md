@@ -192,10 +192,34 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
   - **Querying & Pagination**: Dynamic query building with parameter binding for field equality filters and pagination.
   - Comprehensive integration test suites in `tests/repositories_test.rs` and `tests/document_repository_test.rs`.
 
+## 2026-09-25 — Milestone 5: Authentication, Security & Bootstrap (`infrastructure/src/auth/`)
+
+- **Pure-Rust Cryptographic Architecture (`rust_crypto`)**:
+  - `jsonwebtoken` configured with `default-features = false, features = ["rust_crypto", "use_pem"]`.
+  - Avoids C library compilation (`aws-lc-sys`) and native toolchain issues, ensuring cross-platform stability and zero C dependencies.
+- **Pluggable Token Validation (`TokenValidator`)**:
+  - `JwksTokenValidator`: Thread-safe cached JWKS key rotation (`Arc<RwLock<HashMap<String, DecodingKey>>>`) for AWS Cognito and Keycloak with audience and issuer verification.
+  - `SecretTokenValidator`: Symmetric HMAC-SHA256 validator and token generator for development, tests, and inter-service authentication.
+  - `MockTokenValidator`: Unverified claims extraction (`jsonwebtoken::dangerous::insecure_decode_claims`) and overrides for unit test isolation.
+- **Shadow Users (`SqlxShadowUserRepository`)**:
+  - Automatically records and updates verified OIDC identity claims (`user_id`, `email`, `name`, `auth_type`, `last_seen`) in PostgreSQL / AWS Aurora DSQL on every authenticated request.
+- **Idempotent Administrator Bootstrap (`run_bootstrap`)**:
+  - Seeds initial administrator identity from `BOOTSTRAP_ADMIN_SUB` and `BOOTSTRAP_AUTH_TYPE` on application startup.
+  - Idempotently guards against duplicate role grants: skips if an admin role assignment already exists for the user.
+  - Seeds `shadow_users`, creates an approved `AccessRequest` audit record, and assigns `ROLE_ADMIN_ID` with `granted_by: None`.
+- **Axum Request Extractors**:
+  - `AuthenticatedClaims`: Open extractor for verified OIDC tokens without requiring active permissions (used for onboarding at `POST /api/access-requests`).
+  - `AuthUser`: Protected extractor enforcing ADR-005 enrollment states:
+    - Approved role assignments -> returns `AuthUser` carrying `CallerContext`.
+    - Pending request -> returns 403 `ACCESS_PENDING`.
+    - Rejected request -> returns 403 `ACCESS_REJECTED`.
+    - No request submitted -> returns 403 `ACCESS_NOT_REQUESTED`.
+
 ---
 
 > **AI agents**: when you make a non-obvious decision during implementation, append an entry here.
 > Format: `## YYYY-MM-DD — Topic` followed by bullet points.
+
 
 
 
