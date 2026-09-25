@@ -76,14 +76,21 @@ crates have no knowledge of any deployment environment.
 - Migrations use plain SQL and `sea-query`; avoid DSQL-incompatible DDL (see research note and ADR-009) so schemas run identically on standard PG and DSQL
 - The binary is configured entirely through environment variables — no AWS SDK calls outside `infrastructure`
 
-## UI (TBD)
+## UI Layer (Admin Dashboard)
 
-The UI layer is **not decided yet**. Options under investigation:
-- Separate repository deployed independently on AWS (React or similar)
-- Internal UI crate in this workspace (Leptos / Yew / HTMX)
-
-**Do not** add UI dependencies to any existing crate until this decision is recorded in an ADR.
+The UI layer is an independent **Decoupled Single-Page Application (SPA)** adhering strictly to Hexagonal Architecture boundaries:
+- **Location**: Isolated `/frontend` directory in the repository (independent package management, zero impact on Cargo workspace).
+- **Technology Stack**: React 19, TypeScript, Mantine v7 design system (`@mantine/*`), Zustand for global client state, TanStack Router for type-safe routing, and TanStack Query v5 for server state.
+- **Dynamic Schema Forms**: Queries `/api/schema/document-types` at runtime to generate forms for all 12 field types, multi-locale editing tabs (`LocalizedText`), and relational association pickers (`HasOne` and `HasMany`).
+- **Authentication**: OIDC Authorization Code Flow with PKCE (`oidc-client-ts`). Uses Dex for local development (~15MB RAM via Docker Compose) and AWS Cognito in production.
+- **Deployment**: Static assets hosted on AWS S3 behind an Amazon CloudFront CDN distribution with Origin Access Control (OAC). CloudFront routes `/*` to S3 and `/api/*` to the Axum backend, eliminating CORS preflight overhead in production.
+- **Specification**: See [`docs/ui-architecture.md`](./ui-architecture.md).
 
 ## Related ADRs
 
 - [ADR-001 — Hexagonal Architecture with three-crate workspace](./adr/ADR-001-hexagonal-architecture.md)
+- [ADR-005 — Authentication and Authorization Strategy](./adr/ADR-005-auth-strategy.md)
+- [ADR-008 — Unified Naming Conventions and REST Routing Strategy](./adr/ADR-008-naming-conventions-and-routing.md)
+- [ADR-009 — Dynamic Schema Migration and Relation Persistence](./adr/ADR-009-dynamic-schema-migration-and-relation-persistence.md)
+- [ADR-010 — Admin Dashboard UI Architecture & Implementation Strategy](./adr/ADR-010-ui-architecture.md)
+

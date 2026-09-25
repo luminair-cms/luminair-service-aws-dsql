@@ -31,8 +31,8 @@ flowchart TD
         RestApi["6. REST API Surface<br/>(Axum Routes, DTOs, Error Envelopes)"]:::done
     end
 
-    subgraph ClientLayer["Frontend"]
-        UI["7. Admin UI<br/>(Architecture TBD via ADR)"]:::tbd
+    subgraph ClientLayer["Frontend (frontend/)"]
+        UI["7. Admin UI<br/>(Decoupled React 19 + Mantine SPA)"]:::planned
     end
 
     Domain --> App
@@ -172,14 +172,15 @@ Consists of two complementary mechanisms aligned with [ADR-006](./adr/ADR-006-sc
 
 ### Phase 7: UI Layer (Admin Dashboard)
 * **Objective**: Web-based administration panel for managing content, reviewing access requests, and inspecting schemas.
-* **Current Status**: **TBD** per [`docs/architecture.md`](./architecture.md#ui-tbd).
-* **Decision Path**:
-  1. Draft investigation note on frontend options:
-     * *Option A*: Decoupled SPA (React / TypeScript / Tailwind) deployed to S3 / CloudFront.
-     * *Option B*: Fullstack Rust (Leptos / Yew) or Server-Side Rendering (HTMX / Askama).
-  2. Review trade-offs (deployment simplicity vs developer ergonomics vs AWS serverless cost).
-  3. Formulate and accept **ADR-010: UI Architecture**.
-  4. Implement UI based on accepted ADR.
+* **Architecture**: Decoupled Single-Page Application (SPA) housed under `/frontend`, deployed to AWS S3 + Amazon CloudFront.
+* **Stack**: React 19 + TypeScript + Vite 6 + Mantine v7 + Zustand + TanStack Router/Query.
+* **Specification**: [`docs/ui-architecture.md`](./ui-architecture.md) & [ADR-010](./adr/ADR-010-ui-architecture.md).
+* **Milestone Breakdown**:
+  * **7A: Local Dev & Scaffolding**: Setup `docker-compose.dev.yml` with Dex (~15MB RAM), initialize `/frontend` with Vite 6, React 19, Mantine v7 theme, and TanStack Router/Query root.
+  * **7B: OIDC Authentication & Onboarding**: Implement PKCE flow (`oidc-client-ts`), `useAuthStore` (Zustand), `AuthGuard`, and onboarding lifecycle views (`ACCESS_NOT_REQUESTED`, `ACCESS_PENDING`, `ACCESS_REJECTED`).
+  * **7C: Dynamic Schema Engine**: Implement runtime schema inspector querying `/api/schema/document-types` and recursive form generator mapping all 12 field types, multi-locale editing tabs (`LocalizedText`), and validation constraints.
+  * **7D: Content Management Workflows**: Paginated collection lists (`/api/{plural}`), singleton direct edit view (`/api/{singular}`), draft and publish controls (`publish`/`unpublish` buttons), and revision history modal.
+  * **7E: Relational Link Picker & Access Request Admin**: Modal association picker for `HasOne`/`HasMany` relations, and administrative review panel for pending access requests (`/api/admin/access-requests`).
 
 ---
 
@@ -193,4 +194,5 @@ Consists of two complementary mechanisms aligned with [ADR-006](./adr/ADR-006-sc
 | **4** | SQLx Repositories | Concrete repository adapters | ✅ Completed (Integration tests) |
 | **5** | Auth & Bootstrap | JWT middleware, admin bootstrap hook | ✅ Completed (142 tests passing) |
 | **6** | REST API Handlers | Axum router, controllers, problem+json | ✅ Completed (149 tests passing) |
-| **7** | UI Architecture | ADR-010 + dashboard implementation | E2E browser / cypress tests |
+| **7** | Admin Dashboard SPA | `/frontend` React 19 + Mantine SPA | 🚀 Planned (ADR-010 Accepted, Dex configured) |
+

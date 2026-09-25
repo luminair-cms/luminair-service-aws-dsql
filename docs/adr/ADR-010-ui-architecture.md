@@ -1,9 +1,10 @@
-# ADR-010: Admin Dashboard UI Architecture & Deployment Strategy
+# ADR-010: Admin Dashboard UI Architecture & Implementation Strategy
 
-- **Status**: `Proposed`
+- **Status**: `Accepted`
 - **Date**: 2026-09-25
 - **Deciders**: Dmitri Astafiev, Antigravity
 - **Research**: [`docs/research/ui-architecture-options.md`](../research/ui-architecture-options.md)
+- **Technical Specification**: [`docs/ui-architecture.md`](../ui-architecture.md)
 - **Related ADRs**:
   - [ADR-001: Hexagonal Architecture](./ADR-001-hexagonal-architecture.md)
   - [ADR-005: Authentication Strategy](./ADR-005-auth-strategy.md)
@@ -13,136 +14,75 @@
 
 ## Context
 
-With the completion of Milestones 1 through 6, Luminair provides a fully functional, headless CMS backend with domain modeling, application use cases, static and dynamic PostgreSQL/AWS Aurora DSQL persistence, OIDC authentication, and a Strapi 5-style REST API surface.
+With Milestones 1 through 6 complete, Luminair exposes a headless CMS REST API backed by AWS Aurora DSQL / PostgreSQL. The system requires an administration web panel for content editors and administrators.
 
-To enable content authors, editors, and administrators to interact with the system, Luminair requires an administrative web dashboard. The key operational challenges of this UI include:
-1. **Dynamic Schema-Driven Rendering**: Forms cannot be statically hardcoded because document types, attributes, constraints, and relations are defined dynamically at startup via JSON schema files and introspected via `/api/schema/document-types`.
-2. **Complex Field Types & Multi-Locale Editing**: The dashboard must support localized fields (`LocalizedText`) with multi-language tabs, relational entity pickers (`HasOne` and `HasMany`), JSON structures, and draft/publish status indicators.
-3. **Authentication & Onboarding**: Seamless OIDC integration supporting Cognito, Keycloak, or Auth0, handling access request lifecycles (`ACCESS_PENDING`, `ACCESS_REJECTED`, `ACCESS_NOT_REQUESTED`).
-4. **AWS Serverless Alignment**: Deployment and infrastructure costs should scale to zero when idle, matching the serverless philosophy of AWS Aurora DSQL.
-
----
-
-## Decision Drivers
-
-- **Dynamic Form Ergonomics**: Rich ecosystem of schema-driven form generators, validation libraries, and data grids.
-- **Architectural Integrity**: Preservation of Hexagonal Architecture boundaries—the backend must remain a pure headless REST API without leaking HTML rendering or presentation templates into the Rust crates.
-- **AWS Serverless Cost & Scalability**: Zero ongoing compute cost for static asset delivery via AWS S3 and Amazon CloudFront.
-- **Compilation & Toolchain Isolation**: The frontend build process must not degrade Rust workspace compilation times, dependency graphs, or CI speed.
-- **Developer Velocity**: Access to mature UI component libraries (e.g. Radix UI, Shadcn UI, Tailwind CSS, TanStack Table) for rapid assembly of polished CMS interfaces.
+Key requirements for this interface:
+1. **Dynamic Schema-Driven Form Generation**: The UI must dynamically inspect registered document types at `/api/schema/document-types` and generate forms for 12 attribute types (`Text`, `LocalizedText`, `Uid`, `Uuid`, `Integer`, `Decimal`, `Date`, `DateTime`, `Boolean`, `Email`, `Url`, `Json`) and relational links (`HasOne`, `HasMany`) with client-side constraint validation.
+2. **Draft & Publish Lifecycle Controls**: Visual state indicators (`Draft`, `Published`, `Modified`) and one-click publish, unpublish, and revision history inspection.
+3. **Multi-Locale Editing**: Seamless editing of `LocalizedText` across all configured system locales (`SystemConfig`) without losing in-flight draft state.
+4. **OIDC Authentication & Onboarding**: Seamless OIDC integration (AWS Cognito in production, Dex for lightweight local development), supporting the user onboarding lifecycle (`ACCESS_NOT_REQUESTED`, `ACCESS_PENDING`, `ACCESS_REJECTED`).
+5. **Zero-Compute AWS Serverless Hosting**: Frontend delivery must be cost-efficient, scaling to zero via AWS S3 and Amazon CloudFront.
 
 ---
 
-## Considered Alternatives
+## Decision
 
-### Option A: Decoupled Single-Page Application (SPA) (React 19 + TypeScript + Vite + Tailwind CSS / Shadcn UI) deployed to S3 / CloudFront
+We adopt **Option A: Decoupled Single-Page Application (SPA)** using **React 19, TypeScript, Mantine v7, Zustand, and TanStack Router/Query**, deployed to **AWS S3 + Amazon CloudFront** in production, paired with **Dex** as the ultra-lightweight local OIDC identity provider.
 
-A modern TypeScript SPA living in a dedicated `frontend/` directory within this repository (monorepo structure with isolated package management). Communicates with the backend exclusively via HTTPS REST API calls.
+### Core Technology Stack
 
-**Pros**:
-- Massive ecosystem of accessible UI components ([Shadcn UI](https://ui.shadcn.com/), [Radix UI](https://www.radix-ui.com/)) and battle-tested form managers ([React Hook Form](https://react-hook-form.com/), [Zod](https://zod.dev/)).
-- Dynamic schema rendering is native and straightforward to implement via recursive component mapping.
-- Hosted on AWS S3 behind Amazon CloudFront with Origin Access Control (OAC): zero server compute cost, instant global edge caching, and automated HTTPS certificate provisioning via ACM.
-- Complete separation of concerns: Frontend and backend can be tested, linted, and deployed independently in CI/CD.
-- Zero impact on Rust compiler performance or binary size.
-
-**Cons**:
-- Requires a separate frontend build toolchain (Node.js / pnpm / Vite).
-- Requires configuring CORS when the API and frontend reside on different domains in development (solved via CloudFront routing or Vite dev proxy).
-
----
-
-### Option B: Embedded SPA (Vite + React built and served directly by Axum binary)
-
-Same frontend stack as Option A, but the compiled frontend assets (`dist/`) are packaged into the Rust binary or served via `tower-http::services::ServeDir` from the Axum HTTP server.
-
-**Pros**:
-- Single deployment artifact (one container or binary serves both `/api/*` and `/*`).
-- Eliminates CORS issues since all requests share the same origin.
-
-**Cons**:
-- Couples Rust backend CI/CD to Node.js/pnpm build steps.
-- Increases Docker image size and Axum memory/network footprint.
-- Misses out on native CloudFront edge caching optimizations unless placed behind CloudFront anyway.
+| Layer / Responsibility | Technology Choice | Rationale |
+|---|---|---|
+| **Language & Runtime** | **TypeScript 5.8+ & React 19** | Industry-standard for CMS dashboards; maximum library ecosystem and typing ergonomics. |
+| **Build & Dev Tooling** | **Vite 6** | Sub-second cold start, instant Hot Module Replacement (HMR), optimized Rollup tree-shaking for static S3 hosting. |
+| **UI Component System** | **Mantine v7** (`@mantine/*`) | All-in-one, fully typed, accessible design system. Includes core components, form engine (`@mantine/form`), notifications, modals, dates (`@mantine/dates`), and rich-text editing (`@mantine/tiptap`). Eliminates fragmented UI dependencies. |
+| **Global & Client State** | **Zustand** (`zustand`) | Ultra-lightweight, unopinionated, hook-based state management. Manages authentication session, active locale, sidebar layout, and in-memory draft buffers with `persist` middleware. |
+| **Server State & Caching** | **TanStack Query v5** (`@tanstack/react-query`) | Handles caching, optimistic updates (publish/unpublish), background refetching, and query invalidation for REST resources. |
+| **Routing & Navigation** | **TanStack Router** (`@tanstack/react-router`) | 100% type-safe routing, typed search parameter parsing with Zod (for pagination and filtering), nested route layouts, and route loaders. |
+| **HTTP Client** | **Axios** with Interceptors | Centralized Bearer token injection, automatic OIDC token refresh handling, and RFC 9457 `application/problem+json` error mapping. |
+| **OIDC / PKCE Auth** | **`oidc-client-ts`** | Standards-compliant Authorization Code Flow with PKCE for public SPA clients. Zero server secrets needed. |
+| **Local OIDC IdP** | **Dex** (`ghcr.io/dexidp/dex`) | ~15 MB RAM, sub-second boot, single static YAML file for mock users (`admin@luminair.dev`, `editor@luminair.dev`) and SPA client config. |
 
 ---
 
-### Option C: Fullstack Rust WebAssembly (Leptos or Dioxus)
+## Architectural Principles
 
-An internal UI crate (`ui/`) in the Cargo workspace compiling to WebAssembly (`wasm32-unknown-unknown`).
-
-**Pros**:
-- Unified language (100% Rust) across frontend and backend.
-- Shared domain types and DTOs between crates.
-
-**Cons**:
-- Very heavy Wasm bundle sizes (typically 1.5MB to 8MB uncompressed), leading to slow initial page loads.
-- Extremely limited ecosystem for complex CMS widgets (rich text WYSIWYG, nested relation pickers, complex responsive data tables).
-- Substantially increases Rust compile times and CI build pipelines.
-- Steep learning curve for typical frontend contributors.
-
----
-
-### Option D: Server-Side Rendering (SSR) with HTMX + Askama Templates in Axum
-
-Axum handlers render HTML pages and fragments server-side using Askama or Minijinja templates, with dynamic interactivity provided by HTMX.
-
-**Pros**:
-- Zero Node.js build tooling required; pure Cargo workflow.
-- Fast initial page load with tiny JavaScript footprint.
-
-**Cons**:
-- Fundamentally conflicts with the headless API architecture: requires duplicating endpoints to return HTML fragments rather than uniform JSON envelopes and RFC 9457 error details.
-- Server-side generation of dynamic, recursive schema forms with client-side multi-locale tabs is rigid and difficult to maintain.
-- Stateful interactions (e.g. relation selection modals, client draft state) require significant ad-hoc JavaScript, negating the simplicity benefit.
-
----
-
-## Proposed Decision
-
-**Chosen Option: Option A (Decoupled SPA with React 19, TypeScript, Vite, Tailwind CSS, and Shadcn UI, deployed to AWS S3 + CloudFront)**, with **Vite Dev Server Proxy** for seamless local development and optional fallback support for Option B (serving static `dist/` in single-container environments):
-
-1. **Repository Layout**:
-   - The frontend will be housed in a `/frontend` directory in the repository root.
-   - The root Cargo workspace remains completely decoupled from Node.js dependencies.
-2. **Technology Stack**:
-   - **Framework & Bundler**: React 19 + TypeScript + Vite.
-   - **Design System & Styling**: Tailwind CSS + Shadcn UI (accessible Radix UI primitives + Lucide icons).
-   - **State & Data Fetching**: TanStack Query (React Query) for API caching, mutation states, and automatic background refetching.
-   - **Forms & Validation**: React Hook Form with dynamic schema generation derived from `/api/schema/document-types`.
-   - **Tables & Pagination**: TanStack Table v8 for sorting, filtering, and paginating collection instances.
-   - **Auth**: `oidc-client-ts` / `react-oidc-context` for OIDC provider integration (AWS Cognito / Keycloak).
-3. **AWS Deployment Strategy**:
-   - Production static assets (`index.html`, `.js`, `.css`, assets) deployed to a private AWS S3 bucket.
-   - Amazon CloudFront CDN distribution with Origin Access Control (OAC), serving static files at root `/` and routing `/api/*` to the Axum backend load balancer / ECS service.
-   - Eliminates CORS in production while retaining zero-compute static asset costs.
+1. **Strict Hexagonal Separation**:
+   - The frontend lives in an isolated `/frontend` directory in the repository.
+   - It maintains its own `package.json` and toolchain, having **zero impact** on Cargo workspace build times, dependency trees, or CI pipelines.
+   - The Rust backend remains a 100% headless REST API.
+2. **Schema-Driven Presentation**:
+   - The UI never hardcodes document schemas or attribute lists.
+   - On startup, the UI loads `/api/schema/document-types` and `/api/system/config`, dynamically configuring its navigation menus, tables, and form inputs.
+   - Any schema modification in the backend JSON files is immediately reflected in the admin dashboard upon browser refresh.
+3. **Public Client Security Model (OAuth 2.0 PKCE)**:
+   - The SPA registers as a Public Client without a secret.
+   - Tokens are kept in memory and passed via `Authorization: Bearer <access_token>`.
+   - The backend validates tokens statelessly via cached JWKS public keys.
+4. **CloudFront Single-Origin Routing (Production)**:
+   - CloudFront distributes static assets from a private S3 bucket (`/*`) and proxies `/api/*` requests to the Axum backend load balancer/ECS container.
+   - Eliminates cross-origin preflight (`OPTIONS`) latency and CORS complexities in production.
 
 ---
 
 ## Consequences
 
 ### Positive
-- **Optimal CMS User Experience**: Rich, responsive, stateful client interface with smooth multi-language tab switching, modal relation pickers, and dynamic schema forms.
-- **Architectural Cleanliness**: The Rust backend remains 100% headless, adhering strictly to Hexagonal Architecture. The backend API is consumable by any client (web, mobile, third-party integrations).
-- **Cost Efficiency**: Zero compute cost for frontend delivery via AWS S3 and CloudFront edge caching.
-- **Independent Lifecycles**: Frontend and backend can be developed, tested, and deployed independently without rebuilding the other.
-- **Developer Accessibility**: Standard, modern TypeScript/React ecosystem allows any web developer to contribute without requiring Rust expertise.
+- **Complete, Cohesive UI Suite**: Mantine provides all required CMS controls (rich text, date pickers, modals, notifications, tabbed locale inputs) under a single cohesive design system.
+- **Fast & Predictable State**: Zustand provides clean, boilerplate-free state management without React context re-render thrashing.
+- **Zero Ongoing Compute Costs**: Static asset hosting on S3/CloudFront costs fractions of a cent per month and scales infinitely.
+- **Ultra-Fast Local Development**: Dex starts instantaneously in ~15MB RAM via Docker Compose, eliminating Keycloak's JVM overhead.
 
-### Negative / Trade-offs
-- Introduces Node.js / pnpm tooling to the repository (isolated under `frontend/`).
-- Requires configuring CloudFront routing rules or API CORS headers for cross-origin communication.
-
-### Risks & Mitigations
-- **Schema Drift between Backend & Frontend**:
-  - *Mitigation*: The frontend does not hardcode schemas; it introspects `/api/schema/document-types` on load, ensuring that adding or modifying JSON schema files in the backend is instantly and automatically reflected in the UI upon server restart.
+### Trade-offs & Mitigations
+- **Node.js Toolchain**: Introduces Node.js and `pnpm` to the repository. Isolated strictly to `/frontend`.
+- **CORS in Local Dev**: In local development, the Vite dev server runs on port `5173` while Axum runs on `3000`. Solved transparently via Vite dev proxy (`server.proxy`).
 
 ---
 
-## Follow-up Actions
+## Implementation Roadmap (Phase 7)
 
-- [ ] Present ADR-010 to user for review and formal acceptance.
-- [ ] Initialize `frontend/` directory with Vite, React 19, TypeScript, and Tailwind CSS.
-- [ ] Setup Shadcn UI primitives and TanStack Query client.
-- [ ] Implement Dynamic Schema Form Engine reading from `/api/schema/document-types`.
-- [ ] Implement Collection and Singleton management views with Draft/Publish lifecycle.
-- [ ] Implement Access Request administration and OIDC authentication flow.
+- [ ] **Milestone 7A**: Local Environment & Frontend Scaffolding (`docker-compose.dev.yml` with Dex + Vite + React 19 + Mantine setup).
+- [ ] **Milestone 7B**: Authentication, PKCE & Onboarding Flow (Dex/Cognito login, callback, `useAuthStore`, `AuthGuard`, onboarding requests).
+- [ ] **Milestone 7C**: App Shell, Navigation & Dynamic Schema Engine (Mantine AppShell, dynamic form renderer for all 12 field types + `LocalizedText` tabs).
+- [ ] **Milestone 7D**: Content Management Views (Collections list with pagination/filter, singleton direct edit, draft/publish workflow, revision snapshots).
+- [ ] **Milestone 7E**: Relational Link Picker & User Management (`HasOne`/`HasMany` modal picker, admin access requests review panel).

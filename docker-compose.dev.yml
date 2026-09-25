@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: luminair-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: luminair
+      POSTGRES_PASSWORD: luminair_password
+      POSTGRES_DB: luminair_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  dex:
+    image: ghcr.io/dexidp/dex:v2.41.1
+    container_name: luminair-dex
+    restart: unless-stopped
+    ports:
+      - "5556:5556"
+    volumes:
+      - ./docker/dex/dex-config.yaml:/etc/dex/config.docker.yaml
+    depends_on:
+      - postgres
+
+volumes:
+  pgdata:

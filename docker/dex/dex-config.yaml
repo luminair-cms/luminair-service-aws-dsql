@@ -1,0 +1,28 @@
+issuer: http://localhost:5556/dex
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+# Pre-seeded local users
+# Password for all accounts: "password"
+staticPasswords:
+  - email: "admin@luminair.dev"
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: "admin"
+    userID: "08a1d7f3-admin-sub"
+
+  - email: "editor@luminair.dev"
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: "editor"
+    userID: "08a1d7f3-editor-sub"
+
+# Pre-configured public client for Vite Admin SPA
+staticClients:
+  - id: luminair-admin-spa
+    name: "Luminair Admin Dashboard"
+    public: true
+    redirectURIs:
+      - "http://localhost:5173/callback"
+      - "http://localhost:3000/callback"

@@ -233,10 +233,29 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
 - **Axum Extractor Composition**:
   - `AppState` implements `FromRef<AppState> for AuthAppState`, seamlessly wiring `AuthUser` and `AuthenticatedClaims` extractors without manual middleware bridges.
 
+## 2026-09-25 — Admin Dashboard UI Architecture (ADR-010 Accepted)
+
+- **Architecture**: Decoupled Single-Page Application (Option A) housed under `/frontend`, strictly preserving Hexagonal Architecture and headless API boundaries.
+- **Frontend Stack**: React 19 + TypeScript + Vite 6 + Mantine v7 design system (`@mantine/core`, `@mantine/form`, `@mantine/notifications`, `@mantine/modals`, `@mantine/dates`, `@mantine/tiptap`).
+- **State Architecture**:
+  - Client / Global State: Zustand (`useAuthStore`, `useUiStore`, `useDraftStore`) with persistence middleware.
+  - Server State: TanStack Query v5 for remote data caching, query invalidation, and optimistic mutations.
+- **Routing**: TanStack Router with 100% type-safe routes, Zod search param validation, and `AuthGuard` enrollment routing.
+- **Dynamic Schema Forms**: Runtime form generator mapping `/api/schema/document-types` metadata to Mantine inputs for all 12 field types, multi-locale editing tabs (`LocalizedText`), and relation pickers (`HasOne`, `HasMany`).
+- **Authentication**: OIDC Authorization Code Flow with PKCE via `oidc-client-ts`.
+- **Local Dev IdP**: Dex (`ghcr.io/dexidp/dex`) configured via `docker-compose.dev.yml` and `docker/dex/dex-config.yaml` (~15MB RAM, instant boot, pre-seeded admin/editor users).
+- **Production AWS Deployment**: Static assets deployed to AWS S3 behind Amazon CloudFront with Origin Access Control (OAC). CloudFront serves static SPA at `/*` and proxies `/api/*` to the Axum backend (eliminating CORS in production).
+- **Alternatives Rejected**:
+  - Embedded SPA in Axum (coupled build pipelines and container asset serving).
+  - Fullstack Rust Wasm / Leptos (heavy bundle size 1.5MB+, scarce CMS component ecosystem, slow compilation).
+  - Server-Side Rendering with HTMX + Askama (awkward recursive schema form generation, rigid multi-locale tabs, blurs headless API boundary).
+- See: [ADR-010](../../docs/adr/ADR-010-ui-architecture.md) and [ui-architecture.md](../../docs/ui-architecture.md).
+
 ---
 
 > **AI agents**: when you make a non-obvious decision during implementation, append an entry here.
 > Format: `## YYYY-MM-DD — Topic` followed by bullet points.
+
 
 
 
