@@ -13,27 +13,39 @@ authors = ["Luminair Contributors"]
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-domain = { path = "domain" }
+# Workspace crates
 application = { path = "application" }
+domain = { path = "domain" }
 
-nutype = { version = "0.8.0", features = ["serde", "regex", "rust_decimal"] }
-serde = { version = "1.0.229", features = ["derive"] }
-uuid = { version = "1.26.1", features = ["v4", "v7", "serde"] }
-chrono = { version = "0.4.45", features = ["serde"] }
-thiserror = { version = "2.0.20" }
-indexmap = { version = "2.14.2", features = ["serde"] }
-async-trait = { version = "0.1.92" }
-rust_decimal = { version = "1.43.0", features = ["serde"] }
-regex = { version = "1.13.1" }
-serde_json = { version = "1.0.151" }
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres", "uuid", "chrono", "migrate", "json", "macros", "rust_decimal"] }
-sea-query = { version = "=1.0.1", default-features = false, features = ["backend-postgres", "with-uuid", "with-chrono", "with-rust_decimal", "with-json"] }
-email_address = "=0.2.9"
-url = "=2.5.8"
+# Web, HTTP & Auth
 axum = { version = "0.8.9", default-features = false, features = ["tokio", "http1", "json", "matched-path", "query"] }
 jsonwebtoken = { version = "11.1.0", default-features = false, features = ["rust_crypto", "use_pem"] }
+
+# Persistence & Database
+sea-query = { version = "=1.0.1", default-features = false, features = ["backend-postgres", "with-uuid", "with-chrono", "with-rust_decimal", "with-json"] }
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres", "uuid", "chrono", "migrate", "json", "macros", "rust_decimal"] }
+
+# Async & Concurrency
+async-trait = { version = "0.1.92" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+# Data Types & Serialization
+chrono = { version = "0.4.45", features = ["serde"] }
+indexmap = { version = "2.14.2", features = ["serde"] }
+nutype = { version = "0.8.0", features = ["serde", "regex", "rust_decimal"] }
+rust_decimal = { version = "1.43.0", features = ["serde"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.151" }
+uuid = { version = "1.26.1", features = ["v4", "v7", "serde"] }
+
+# Utilities & Observability
+email_address = "=0.2.9"
+regex = { version = "1.13.1" }
+thiserror = { version = "2.0.21" }
 tracing = { version = "0.1.44" }
+url = "=2.5.8"
+
+# Testing
 axum-test = { version = "21.1.0" }
 
 
