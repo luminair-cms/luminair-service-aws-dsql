@@ -175,6 +175,10 @@ impl SchemaRegistry {
         self.by_name.keys().map(|k| k.as_str())
     }
 
+    pub fn all_types(&self) -> impl Iterator<Item = &DocumentType> {
+        self.types.values()
+    }
+
     pub fn validate_content(
         &self,
         type_id: &DocumentTypeId,

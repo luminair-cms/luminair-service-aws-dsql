@@ -1,9 +1,15 @@
 //! Luminair Infrastructure crate.
 
+pub mod api;
 pub mod auth;
 pub mod migrations;
 pub mod repositories;
 pub mod schema_loader;
+
+pub use api::{
+    AccessRequestDto, ApiError, AppState, CollectionMeta, CollectionResponse, PaginationMeta,
+    ProblemDetails, SingleResponse, create_router,
+};
 
 pub use auth::{
     AuthConfig, AuthError, AuthUser, AuthenticatedClaims, Claims, JwksTokenValidator,
@@ -13,7 +19,7 @@ pub use auth::{
 pub use migrations::{MIGRATOR, ROLE_ADMIN_ID, ROLE_EDITOR_ID, ROLE_VIEWER_ID, run_migrations};
 pub use repositories::{
     SqlxAccessRequestRepository, SqlxDocumentInstanceRepository, SqlxRoleRepository,
-    SqlxUserRoleAssignmentRepository,
+    SqlxSnapshotRepository, SqlxUserRoleAssignmentRepository,
 };
 pub use schema_loader::{
     SchemaSyncError, SchemaSyncResult, build_desired_schema, execute_migration_plan,

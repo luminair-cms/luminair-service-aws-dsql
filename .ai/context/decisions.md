@@ -215,10 +215,29 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
     - Rejected request -> returns 403 `ACCESS_REJECTED`.
     - No request submitted -> returns 403 `ACCESS_NOT_REQUESTED`.
 
+## 2026-09-25 — Milestone 6: REST API Layer (`infrastructure/src/api/`)
+
+- **Strapi 5-style Unified REST Routing**:
+  - Dynamically routes requests based on registered `DocumentType` metadata in `SchemaRegistry`:
+    - Collections (`kind = Collection`): uses `{plural_name}`: `/api/{plural_name}` (GET list, POST create) and `/api/{plural_name}/{id}` (GET, PUT, DELETE, publish, unpublish, snapshots).
+    - Singletons (`kind = SingleType`): uses `{singular_name}`: `/api/{singular_name}` (GET direct, PUT upsert, DELETE clear, publish, unpublish, snapshots) with zero redundant instance UUIDs.
+- **Two-Table MVP Snapshot Synchronization (`SqlxSnapshotRepository`)**:
+  - `SnapshotRepository` implementation queries the per-type `{table}__published` mirror table directly, adhering to the single published revision MVP model.
+  - Deletion cascades automatically through native Aurora DSQL foreign keys (`ON DELETE CASCADE`).
+- **RFC 9457 Problem Details (`application/problem+json`)**:
+  - Unified HTTP error response mapping for all domain, application, auth, and parameter validation failures.
+  - Exposes standardized `type`, `title`, `status`, and `detail` fields without leaking internal database errors.
+- **Envelope Standardization**:
+  - Single resource endpoints wrap responses in `{ "data": ... }`.
+  - Collection endpoints wrap responses in `{ "data": [ ... ], "meta": { "pagination": { "page", "page_size", "total" } } }`.
+- **Axum Extractor Composition**:
+  - `AppState` implements `FromRef<AppState> for AuthAppState`, seamlessly wiring `AuthUser` and `AuthenticatedClaims` extractors without manual middleware bridges.
+
 ---
 
 > **AI agents**: when you make a non-obvious decision during implementation, append an entry here.
 > Format: `## YYYY-MM-DD — Topic` followed by bullet points.
+
 
 
 

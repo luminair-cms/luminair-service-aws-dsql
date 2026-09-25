@@ -45,7 +45,7 @@ impl SqlxDocumentInstanceRepository {
     }
 }
 
-fn read_content_value(
+pub(crate) fn read_content_value(
     row: &sqlx::postgres::PgRow,
     col_name: &str,
     ft: &FieldType,

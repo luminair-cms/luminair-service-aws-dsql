@@ -28,7 +28,7 @@ flowchart TD
 
         Persistence["4. Persistence Layer<br/>(SQLx Repositories for DSQL/PostgreSQL)"]:::done
         Auth["5. Auth & Bootstrap<br/>(OIDC JWT Middleware, Startup Admin Seeding)"]:::done
-        RestApi["6. REST API Surface<br/>(Axum Routes, DTOs, Error Envelopes)"]:::planned
+        RestApi["6. REST API Surface<br/>(Axum Routes, DTOs, Error Envelopes)"]:::done
     end
 
     subgraph ClientLayer["Frontend"]
@@ -151,7 +151,7 @@ Consists of two complementary mechanisms aligned with [ADR-006](./adr/ADR-006-sc
 
 ---
 
-### Phase 6: REST API (`infrastructure/src/api/`)
+### Phase 6: REST API (`infrastructure/src/api/`) — Complete ✅
 * **Crate**: `infrastructure`
 * **Objective**: Expose HTTP endpoints adhering to [`docs/api.md`](./api.md).
 * **Key Endpoints**:
@@ -192,5 +192,5 @@ Consists of two complementary mechanisms aligned with [ADR-006](./adr/ADR-006-sc
 | **3** | Schema Loader & DDL | `infrastructure/src/schema_loader/` | ✅ Completed (36 tests, sea-query dynamic DDL) |
 | **4** | SQLx Repositories | Concrete repository adapters | ✅ Completed (Integration tests) |
 | **5** | Auth & Bootstrap | JWT middleware, admin bootstrap hook | ✅ Completed (142 tests passing) |
-| **6** | REST API Handlers | Axum router, controllers, problem+json | `axum-test` HTTP test suite |
+| **6** | REST API Handlers | Axum router, controllers, problem+json | ✅ Completed (149 tests passing) |
 | **7** | UI Architecture | ADR-010 + dashboard implementation | E2E browser / cypress tests |
