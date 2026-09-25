@@ -9,7 +9,8 @@ use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
 use super::model::{
-    ColumnDefinition, DatabaseSchema, IndexDefinition, SqlColumnType, TableDefinition,
+    ColumnDefinition, DatabaseSchema, ForeignKeyAction, ForeignKeyDefinition, IndexDefinition,
+    SqlColumnType, TableDefinition, TableKind,
 };
 
 /// List of internal system and migration tables that are excluded from dynamic schema management.
@@ -19,9 +20,11 @@ pub const SYSTEM_TABLES: &[&str] = &[
     "permissions",
     "role_permissions",
     "user_roles",
+    "user_role_assignments",
     "access_requests",
     "shadow_users",
     "document_revision_snapshots",
+    "document_snapshots",
 ];
 
 #[derive(Debug, Error)]
@@ -179,18 +182,67 @@ pub async fn introspect_database_schema(
         indexes_by_table.entry(tbl).or_default().insert(idx);
     }
 
-    // 5. Assemble TableDefinitions
+    // 5. Fetch foreign key constraints
+    let fk_rows: Vec<(String, String, String, String, String)> = sqlx::query_as(
+        r#"
+        SELECT
+            tc.table_name,
+            tc.constraint_name,
+            kcu.column_name,
+            ccu.table_name AS foreign_table_name,
+            ccu.column_name AS foreign_column_name
+        FROM information_schema.table_constraints AS tc
+        JOIN information_schema.key_column_usage AS kcu
+          ON tc.constraint_name = kcu.constraint_name
+         AND tc.table_schema = kcu.table_schema
+        JOIN information_schema.constraint_column_usage AS ccu
+          ON ccu.constraint_name = tc.constraint_name
+         AND ccu.table_schema = tc.table_schema
+        WHERE tc.constraint_type = 'FOREIGN KEY'
+          AND tc.table_schema = 'public';
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut fks_by_table: HashMap<String, IndexSet<ForeignKeyDefinition>> = HashMap::new();
+    for (tbl, fk_name, col_name, ref_table, ref_col) in fk_rows {
+        if !candidate_tables.contains(&tbl) {
+            continue;
+        }
+
+        let fk = ForeignKeyDefinition::new(
+            fk_name,
+            vec![col_name],
+            ref_table,
+            vec![ref_col],
+            ForeignKeyAction::Cascade,
+            ForeignKeyAction::NoAction,
+        );
+
+        fks_by_table.entry(tbl).or_default().insert(fk);
+    }
+
+    // 6. Assemble TableDefinitions
     for tbl_name in candidate_tables {
         let cols = columns_by_table.remove(&tbl_name).unwrap_or_default();
         let idxs = indexes_by_table.remove(&tbl_name).unwrap_or_default();
-        let is_junction = tbl_name.contains("__");
+        let fks = fks_by_table.remove(&tbl_name).unwrap_or_default();
+        let kind = if tbl_name.ends_with("__published") {
+            TableKind::Published
+        } else if tbl_name.ends_with("_link") || tbl_name.contains("__") {
+            TableKind::Link
+        } else {
+            TableKind::Entity
+        };
         let is_singleton = cols.get("_singleton").is_some();
 
         let table = TableDefinition {
             name: tbl_name,
             columns: cols,
             indexes: idxs,
-            is_junction,
+            foreign_keys: fks,
+            kind,
             is_singleton,
         };
 
@@ -236,5 +288,6 @@ mod tests {
         assert!(SYSTEM_TABLES.contains(&"_sqlx_migrations"));
         assert!(SYSTEM_TABLES.contains(&"roles"));
         assert!(SYSTEM_TABLES.contains(&"document_revision_snapshots"));
+        assert!(SYSTEM_TABLES.contains(&"document_snapshots"));
     }
 }

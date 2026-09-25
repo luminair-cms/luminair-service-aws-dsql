@@ -3,12 +3,17 @@
 //! Converts `MigrationStep`s into idempotent PostgreSQL / Aurora DSQL DDL strings
 //! and executes each statement independently outside transaction blocks.
 
-use sea_query::{Alias, ColumnDef, Expr, Index, PostgresQueryBuilder, Table};
+use sea_query::{
+    Alias, ColumnDef, Expr, ForeignKey, ForeignKeyAction, Index, PostgresQueryBuilder, Table,
+};
 use sqlx::PgPool;
 use thiserror::Error;
 
 use super::diff::MigrationStep;
-use super::model::{ColumnDefinition, IndexDefinition, SqlColumnType, TableDefinition};
+use super::model::{
+    ColumnDefinition, ForeignKeyAction as ModelFkAction, IndexDefinition, SqlColumnType,
+    TableDefinition,
+};
 use super::planner::MigrationPlan;
 
 #[derive(Debug, Error)]
@@ -59,7 +64,7 @@ fn build_create_table_sql(table: &TableDefinition) -> String {
     let mut stmt = Table::create();
     stmt.table(Alias::new(&table.name)).if_not_exists();
 
-    if table.is_junction {
+    if table.is_junction() {
         // Composite PK (owner_id, target_id)
         for col in &table.columns {
             let mut col_def = build_column_def(col);
@@ -77,7 +82,31 @@ fn build_create_table_sql(table: &TableDefinition) -> String {
         }
     }
 
+    // Append foreign key constraints
+    for fk in &table.foreign_keys {
+        let mut fk_stmt = ForeignKey::create();
+        fk_stmt.name(&fk.name);
+        for col in &fk.columns {
+            fk_stmt.from(Alias::new(&table.name), Alias::new(col));
+        }
+        for ref_col in &fk.referenced_columns {
+            fk_stmt.to(Alias::new(&fk.referenced_table), Alias::new(ref_col));
+        }
+        fk_stmt.on_delete(map_fk_action(fk.on_delete));
+        fk_stmt.on_update(map_fk_action(fk.on_update));
+        stmt.foreign_key(&mut fk_stmt);
+    }
+
     stmt.to_string(PostgresQueryBuilder)
+}
+
+fn map_fk_action(action: ModelFkAction) -> ForeignKeyAction {
+    match action {
+        ModelFkAction::Cascade => ForeignKeyAction::Cascade,
+        ModelFkAction::Restrict => ForeignKeyAction::Restrict,
+        ModelFkAction::SetNull => ForeignKeyAction::SetNull,
+        ModelFkAction::NoAction => ForeignKeyAction::NoAction,
+    }
 }
 
 /// Builds SQL for `CREATE [UNIQUE] INDEX IF NOT EXISTS`.
@@ -192,12 +221,35 @@ pub async fn execute_migration_plan(
 mod tests {
     use super::*;
     use crate::schema_loader::model::{
-        ColumnDefinition, IndexDefinition, SqlColumnType, TableDefinition,
+        ColumnDefinition, ForeignKeyDefinition, IndexDefinition, SqlColumnType, TableDefinition,
+        TableKind,
     };
 
     #[test]
+    fn test_sea_query_foreign_key() {
+        let mut stmt = Table::create();
+        stmt.table(Alias::new("articles__published"))
+            .if_not_exists()
+            .col(
+                ColumnDef::new(Alias::new("id"))
+                    .uuid()
+                    .not_null()
+                    .primary_key(),
+            )
+            .foreign_key(
+                ForeignKey::create()
+                    .name("fk_articles__published_id")
+                    .from(Alias::new("articles__published"), Alias::new("id"))
+                    .to(Alias::new("articles"), Alias::new("id"))
+                    .on_delete(ForeignKeyAction::Cascade),
+            );
+        let sql = stmt.to_string(PostgresQueryBuilder);
+        println!("Generated SQL: {sql}");
+    }
+
+    #[test]
     fn test_step_to_sql_create_table() {
-        let mut table = TableDefinition::new("articles", false, false);
+        let mut table = TableDefinition::new("articles", TableKind::Entity, false);
         table.columns.insert(ColumnDefinition {
             name: "id".into(),
             data_type: SqlColumnType::Uuid,
@@ -224,8 +276,35 @@ mod tests {
     }
 
     #[test]
-    fn test_step_to_sql_junction_table() {
-        let mut table = TableDefinition::new("articles__tags", true, false);
+    fn test_step_to_sql_published_table_with_foreign_key() {
+        let mut table = TableDefinition::new("articles__published", TableKind::Published, false);
+        table.columns.insert(ColumnDefinition {
+            name: "id".into(),
+            data_type: SqlColumnType::Uuid,
+            nullable: false,
+            is_primary_key: true,
+            default_value: None,
+            unique: false,
+        });
+        table.foreign_keys.insert(ForeignKeyDefinition::new(
+            "fk_articles__published_id",
+            vec!["id".into()],
+            "articles",
+            vec!["id".into()],
+            ModelFkAction::Cascade,
+            ModelFkAction::NoAction,
+        ));
+
+        let step = MigrationStep::CreateTable(table);
+        let sql = step_to_sql(&step);
+
+        assert!(sql.starts_with(r#"CREATE TABLE IF NOT EXISTS "articles__published""#));
+        assert!(sql.contains(r#"CONSTRAINT "fk_articles__published_id" FOREIGN KEY ("id") REFERENCES "articles" ("id") ON DELETE CASCADE"#));
+    }
+
+    #[test]
+    fn test_step_to_sql_link_table() {
+        let mut table = TableDefinition::new("articles__tags_link", TableKind::Link, false);
         table.columns.insert(ColumnDefinition {
             name: "owner_id".into(),
             data_type: SqlColumnType::Uuid,
@@ -242,12 +321,30 @@ mod tests {
             default_value: None,
             unique: false,
         });
+        table.foreign_keys.insert(ForeignKeyDefinition::new(
+            "fk_articles__tags_link_owner",
+            vec!["owner_id".into()],
+            "articles",
+            vec!["id".into()],
+            ModelFkAction::Cascade,
+            ModelFkAction::NoAction,
+        ));
+        table.foreign_keys.insert(ForeignKeyDefinition::new(
+            "fk_articles__tags_link_target",
+            vec!["target_id".into()],
+            "tags",
+            vec!["id".into()],
+            ModelFkAction::Cascade,
+            ModelFkAction::NoAction,
+        ));
 
         let step = MigrationStep::CreateTable(table);
         let sql = step_to_sql(&step);
 
-        assert!(sql.starts_with(r#"CREATE TABLE IF NOT EXISTS "articles__tags""#));
+        assert!(sql.starts_with(r#"CREATE TABLE IF NOT EXISTS "articles__tags_link""#));
         assert!(sql.contains(r#"PRIMARY KEY ("owner_id", "target_id")"#));
+        assert!(sql.contains(r#"CONSTRAINT "fk_articles__tags_link_owner" FOREIGN KEY ("owner_id") REFERENCES "articles" ("id") ON DELETE CASCADE"#));
+        assert!(sql.contains(r#"CONSTRAINT "fk_articles__tags_link_target" FOREIGN KEY ("target_id") REFERENCES "tags" ("id") ON DELETE CASCADE"#));
     }
 
     #[test]
@@ -283,7 +380,7 @@ mod tests {
     fn test_step_to_sql_drop_table() {
         let step = MigrationStep::DropTable {
             name: "legacy".into(),
-            is_junction: false,
+            kind: TableKind::Entity,
         };
         let sql = step_to_sql(&step);
         assert_eq!(sql, r#"DROP TABLE IF EXISTS "legacy""#);

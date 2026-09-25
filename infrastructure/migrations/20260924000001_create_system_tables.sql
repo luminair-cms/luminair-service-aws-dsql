@@ -2,25 +2,7 @@
 -- Migration: 20260924000001_create_system_tables.sql
 -- Description: Create all static system tables for Luminair (DSQL-compatible)
 
--- 1. Document Snapshots (Immutable published revisions across all document types)
-CREATE TABLE IF NOT EXISTS document_snapshots (
-    id            UUID PRIMARY KEY,
-    type_name     VARCHAR(255) NOT NULL,
-    instance_id   UUID NOT NULL,
-    revision      INTEGER NOT NULL CHECK (revision >= 1),
-    published_at  TIMESTAMPTZ NOT NULL,
-    published_by  VARCHAR(255),
-    snapshot_data JSONB NOT NULL,
-    CONSTRAINT uq_document_snapshots_instance_revision UNIQUE (instance_id, revision)
-);
-
-CREATE INDEX IF NOT EXISTS idx_document_snapshots_instance_id
-    ON document_snapshots (instance_id);
-
-CREATE INDEX IF NOT EXISTS idx_document_snapshots_type_name
-    ON document_snapshots (type_name);
-
--- 2. Roles (RBAC definitions, ADR-005)
+-- 1. Roles (RBAC definitions, ADR-005)
 CREATE TABLE IF NOT EXISTS roles (
     id          UUID PRIMARY KEY,
     name        VARCHAR(64) NOT NULL,

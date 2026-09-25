@@ -31,11 +31,14 @@ pub use loader::{
     load_system_config_from_str,
 };
 pub use model::{
-    ColumnDefinition, DatabaseSchema, IndexDefinition, SqlColumnType, TableDefinition,
+    ColumnDefinition, DatabaseSchema, ForeignKeyAction, ForeignKeyDefinition, IndexDefinition,
+    SqlColumnType, TableDefinition, TableKind,
 };
 pub use naming::{
     attribute_to_column_name, document_type_to_table_name, foreign_key_column_name, index_name,
     is_reserved_sql_keyword, junction_table_name, junction_target_index_name, kebab_to_snake,
+    link_owner_fk_name, link_owner_unique_index_name, link_table_name, link_target_fk_name,
+    link_target_index_name, published_fk_name, published_table_name,
 };
 pub use planner::{MigrationPlan, plan_migrations};
 

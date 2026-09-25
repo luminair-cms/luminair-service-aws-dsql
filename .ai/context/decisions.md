@@ -138,6 +138,28 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
   - ADR-002 marked as superseded by ADR-007, ADR-008, and ADR-009 (singleton enforcement via dedicated per-type tables with single-row constraint index).
   - ADR-009 marked as Accepted.
 
+## 2026-09-25 — Schema Redesign: Two-Table Publication Model & Universal `_link` Tables with Aurora DSQL Foreign Keys
+
+- **Elimination of Global `document_snapshots` Table**:
+  - The shared JSONB `document_snapshots` table is completely removed from static migrations (Milestone 3A).
+  - Replaced by per-document-type published mirror tables with strongly-typed columns.
+- **Two-Table Publication Model (MVP)**:
+  - For each document type, a primary table `{table}` holds working draft records.
+  - When `draft_and_publish: true`, a mirror table `{table}__published` is generated with `id UUID PRIMARY KEY REFERENCES {table}(id) ON DELETE CASCADE`.
+  - Exactly at most one row per instance is stored in `{table}__published`, allowing direct `GET /api/{type}` queries on published content without JSONB extraction overhead or table joins.
+  - Deleting a document instance cascades and removes the published mirror row at the database level.
+- **Universal `_link` Tables for All Relations**:
+  - All relations (`HasOne` and `HasMany`) use a dedicated link table named `{owner_table}__{owner_attr}_link`.
+  - No relation foreign key columns are added to entity tables (`{table}`).
+  - Columns: `owner_id UUID NOT NULL REFERENCES {owner_table}(id) ON DELETE CASCADE`, `target_id UUID NOT NULL REFERENCES {target_table}(id) ON DELETE CASCADE`, `PRIMARY KEY (owner_id, target_id)`.
+  - For `HasOne`: uniqueness is enforced via `CREATE UNIQUE INDEX uq_{link}_owner ON {link} (owner_id)`.
+  - For `HasMany`: no uniqueness constraint on `owner_id`.
+  - Reverse lookups: indexed via `CREATE INDEX idx_{link}_target ON {link} (target_id)`.
+  - **Zero-Migration Changing**: Changing relation type between `HasOne` and `HasMany` requires zero physical alterations to the link table itself; only the unique index on `owner_id` is created or dropped.
+- **Topologically Ordered Migration Planning**:
+  - Destruction order: drop indexes $\rightarrow$ drop link tables $\rightarrow$ drop published mirror tables $\rightarrow$ drop entity tables $\rightarrow$ drop columns.
+  - Construction order: create entity tables $\rightarrow$ create published mirror tables $\rightarrow$ create link tables $\rightarrow$ add columns $\rightarrow$ create indexes.
+
 ---
 
 > **AI agents**: when you make a non-obvious decision during implementation, append an entry here.

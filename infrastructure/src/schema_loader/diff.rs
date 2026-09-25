@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use super::model::{ColumnDefinition, DatabaseSchema, IndexDefinition, TableDefinition};
+use super::model::{ColumnDefinition, DatabaseSchema, IndexDefinition, TableDefinition, TableKind};
 
 /// Safety policy governing schema migration step generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,7 +29,7 @@ pub enum MigrationStep {
     CreateTable(TableDefinition),
     DropTable {
         name: String,
-        is_junction: bool,
+        kind: TableKind,
     },
     AddColumn {
         table: String,
@@ -133,7 +133,7 @@ pub fn compute_diff(
                 SafetyPolicy::AllowDestructive => {
                     steps.push(MigrationStep::DropTable {
                         name: actual_table.name.clone(),
-                        is_junction: actual_table.is_junction,
+                        kind: actual_table.kind,
                     });
                 }
             }
@@ -146,13 +146,15 @@ pub fn compute_diff(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema_loader::model::{ColumnDefinition, SqlColumnType, TableDefinition};
+    use crate::schema_loader::model::{
+        ColumnDefinition, SqlColumnType, TableDefinition, TableKind,
+    };
 
     #[test]
     fn test_compute_diff_new_table() {
         let actual = DatabaseSchema::new();
         let mut desired = DatabaseSchema::new();
-        let mut table = TableDefinition::new("articles", false, false);
+        let mut table = TableDefinition::new("articles", TableKind::Entity, false);
         table.columns.insert(ColumnDefinition::new(
             "id",
             SqlColumnType::Uuid,
@@ -169,7 +171,7 @@ mod tests {
     #[test]
     fn test_compute_diff_add_column() {
         let mut actual = DatabaseSchema::new();
-        let mut table_act = TableDefinition::new("articles", false, false);
+        let mut table_act = TableDefinition::new("articles", TableKind::Entity, false);
         table_act.columns.insert(ColumnDefinition::new(
             "id",
             SqlColumnType::Uuid,
@@ -179,7 +181,7 @@ mod tests {
         actual.insert_table(table_act);
 
         let mut desired = DatabaseSchema::new();
-        let mut table_des = TableDefinition::new("articles", false, false);
+        let mut table_des = TableDefinition::new("articles", TableKind::Entity, false);
         table_des.columns.insert(ColumnDefinition::new(
             "id",
             SqlColumnType::Uuid,
@@ -208,7 +210,7 @@ mod tests {
     #[test]
     fn test_compute_diff_destructive_blocked_in_additive_only() {
         let mut actual = DatabaseSchema::new();
-        let table = TableDefinition::new("old_table", false, false);
+        let table = TableDefinition::new("old_table", TableKind::Entity, false);
         actual.insert_table(table);
 
         let desired = DatabaseSchema::new();
@@ -220,7 +222,7 @@ mod tests {
     #[test]
     fn test_compute_diff_destructive_allowed_in_allow_destructive() {
         let mut actual = DatabaseSchema::new();
-        let table = TableDefinition::new("old_table", false, false);
+        let table = TableDefinition::new("old_table", TableKind::Entity, false);
         actual.insert_table(table);
 
         let desired = DatabaseSchema::new();

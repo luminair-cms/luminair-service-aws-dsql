@@ -3,10 +3,10 @@
 //! Transforms domain `SchemaRegistry` into a normalized `DatabaseSchema` AST:
 //! - Applies ADR-008 and ADR-009 naming conventions
 //! - Adds standard audit columns (`id`, `version`, `owner_id`, `publication_state`, `created_at`, `updated_at`)
+//! - If `draft_and_publish: true`: creates published mirror table `{table}__published` with `id REFERENCES {table}(id) ON DELETE CASCADE`
 //! - Maps domain `FieldType`s to `SqlColumnType`s
-//! - Generates foreign key columns (`{attr}_id UUID`) for 1:1 and N:1 relations
-//! - Generates dedicated junction tables (`{owner}__{attr}`) for N:N relations
-//! - Generates indexes for unique attributes, foreign keys, and junction targets
+//! - Universal link tables (`{owner}__{attr}_link`) for all relations (`HasOne` and `HasMany`) with native foreign keys
+//! - Generates indexes for unique attributes, HasOne owner uniqueness, and link targets
 
 use domain::entities::document_type::{DocumentKind, DocumentType};
 use domain::entities::relation::{OwnerRelationKind, RelationView};
@@ -14,46 +14,61 @@ use domain::services::schema_registry::SchemaRegistry;
 use domain::types::field_type::{FieldType, IntegerSize, PrimitiveType};
 
 use super::model::{
-    ColumnDefinition, DatabaseSchema, IndexDefinition, SqlColumnType, TableDefinition,
+    ColumnDefinition, DatabaseSchema, ForeignKeyAction, ForeignKeyDefinition, IndexDefinition,
+    SqlColumnType, TableDefinition, TableKind,
 };
 use super::naming::{
-    attribute_to_column_name, document_type_to_table_name, foreign_key_column_name, index_name,
-    junction_table_name, junction_target_index_name,
+    attribute_to_column_name, document_type_to_table_name, index_name, kebab_to_snake,
+    link_owner_fk_name, link_owner_unique_index_name, link_table_name, link_target_fk_name,
+    link_target_index_name, published_fk_name, published_table_name,
 };
 
 /// Builds the desired `DatabaseSchema` AST from the domain `SchemaRegistry`.
 pub fn build_desired_schema(registry: &SchemaRegistry) -> DatabaseSchema {
     let mut schema = DatabaseSchema::new();
-    let mut junction_tables = Vec::new();
+    let mut published_tables = Vec::new();
+    let mut link_tables = Vec::new();
 
-    // Iterate through all document types in the registry
+    // 1. Iterate through all document types in the registry
     for name in registry.type_names() {
         if let Some(doc_type) = registry.find_type_by_name(name) {
-            let (table_def, junctions) = build_table_definition(doc_type, registry);
-            schema.insert_table(table_def);
-            junction_tables.extend(junctions);
+            let (entity_table, opt_pub_table, links) =
+                build_document_type_tables(doc_type, registry);
+            schema.insert_table(entity_table);
+            if let Some(pub_table) = opt_pub_table {
+                published_tables.push(pub_table);
+            }
+            link_tables.extend(links);
         }
     }
 
-    // Insert all junction tables
-    for junction in junction_tables {
-        schema.insert_table(junction);
+    // 2. Insert all published mirror tables
+    for pub_table in published_tables {
+        schema.insert_table(pub_table);
+    }
+
+    // 3. Insert all universal link tables
+    for link_table in link_tables {
+        schema.insert_table(link_table);
     }
 
     schema
 }
 
-fn build_table_definition(
+fn build_document_type_tables(
     doc_type: &DocumentType,
     registry: &SchemaRegistry,
-) -> (TableDefinition, Vec<TableDefinition>) {
+) -> (
+    TableDefinition,
+    Option<TableDefinition>,
+    Vec<TableDefinition>,
+) {
     let table_name = document_type_to_table_name(doc_type);
     let is_singleton = doc_type.kind == DocumentKind::SingleType;
-    let mut table = TableDefinition::new(&table_name, false, is_singleton);
-    let mut junction_tables = Vec::new();
+    let mut entity_table = TableDefinition::new(&table_name, TableKind::Entity, is_singleton);
 
-    // 1. Standard audit columns on every document table
-    table.columns.insert(ColumnDefinition {
+    // 1. Standard audit columns on the main entity table
+    entity_table.columns.insert(ColumnDefinition {
         name: "id".into(),
         data_type: SqlColumnType::Uuid,
         nullable: false,
@@ -62,7 +77,7 @@ fn build_table_definition(
         unique: true,
     });
 
-    table.columns.insert(ColumnDefinition {
+    entity_table.columns.insert(ColumnDefinition {
         name: "version".into(),
         data_type: SqlColumnType::BigInt,
         nullable: false,
@@ -71,7 +86,7 @@ fn build_table_definition(
         unique: false,
     });
 
-    table.columns.insert(ColumnDefinition {
+    entity_table.columns.insert(ColumnDefinition {
         name: "owner_id".into(),
         data_type: SqlColumnType::Varchar(Some(255)),
         nullable: false,
@@ -80,7 +95,7 @@ fn build_table_definition(
         unique: false,
     });
 
-    table.columns.insert(ColumnDefinition {
+    entity_table.columns.insert(ColumnDefinition {
         name: "publication_state".into(),
         data_type: SqlColumnType::Varchar(Some(50)),
         nullable: false,
@@ -89,7 +104,7 @@ fn build_table_definition(
         unique: false,
     });
 
-    table.columns.insert(ColumnDefinition {
+    entity_table.columns.insert(ColumnDefinition {
         name: "created_at".into(),
         data_type: SqlColumnType::Timestamptz,
         nullable: false,
@@ -98,7 +113,7 @@ fn build_table_definition(
         unique: false,
     });
 
-    table.columns.insert(ColumnDefinition {
+    entity_table.columns.insert(ColumnDefinition {
         name: "updated_at".into(),
         data_type: SqlColumnType::Timestamptz,
         nullable: false,
@@ -109,7 +124,7 @@ fn build_table_definition(
 
     // If SingleType, add a singleton lock column
     if is_singleton {
-        table.columns.insert(ColumnDefinition {
+        entity_table.columns.insert(ColumnDefinition {
             name: "_singleton".into(),
             data_type: SqlColumnType::Boolean,
             nullable: false,
@@ -117,7 +132,7 @@ fn build_table_definition(
             default_value: Some("TRUE".into()),
             unique: true,
         });
-        table.indexes.insert(IndexDefinition::new(
+        entity_table.indexes.insert(IndexDefinition::new(
             format!("idx_{table_name}__singleton"),
             &table_name,
             vec!["_singleton".into()],
@@ -125,14 +140,14 @@ fn build_table_definition(
         ));
     }
 
-    // 2. User-declared attribute columns
+    // 2. User-declared attribute columns on the entity table
     for (attr_id, field_def) in &doc_type.fields {
         let col_name = attribute_to_column_name(attr_id);
         let data_type = map_field_type_to_sql(&field_def.field_type);
         let nullable = !field_def.required;
         let unique = field_def.unique;
 
-        table.columns.insert(ColumnDefinition {
+        entity_table.columns.insert(ColumnDefinition {
             name: col_name.clone(),
             data_type,
             nullable,
@@ -143,7 +158,7 @@ fn build_table_definition(
 
         if unique {
             let idx_name = index_name(&table_name, &col_name);
-            table.indexes.insert(IndexDefinition::new(
+            entity_table.indexes.insert(IndexDefinition::new(
                 idx_name,
                 &table_name,
                 vec![col_name],
@@ -152,75 +167,221 @@ fn build_table_definition(
         }
     }
 
-    // 3. Relation columns and junction tables
+    // 3. Published mirror table (if draft_and_publish is enabled)
+    let published_table = if doc_type.options.draft_and_publish {
+        let pub_table_name = published_table_name(&table_name);
+        let mut pub_table =
+            TableDefinition::new(&pub_table_name, TableKind::Published, is_singleton);
+
+        // id REFERENCES entity_table(id) ON DELETE CASCADE
+        pub_table.columns.insert(ColumnDefinition {
+            name: "id".into(),
+            data_type: SqlColumnType::Uuid,
+            nullable: false,
+            is_primary_key: true,
+            default_value: None,
+            unique: true,
+        });
+
+        pub_table.columns.insert(ColumnDefinition {
+            name: "published_version".into(),
+            data_type: SqlColumnType::BigInt,
+            nullable: false,
+            is_primary_key: false,
+            default_value: None,
+            unique: false,
+        });
+
+        pub_table.columns.insert(ColumnDefinition {
+            name: "owner_id".into(),
+            data_type: SqlColumnType::Varchar(Some(255)),
+            nullable: false,
+            is_primary_key: false,
+            default_value: None,
+            unique: false,
+        });
+
+        pub_table.columns.insert(ColumnDefinition {
+            name: "created_at".into(),
+            data_type: SqlColumnType::Timestamptz,
+            nullable: false,
+            is_primary_key: false,
+            default_value: None,
+            unique: false,
+        });
+
+        pub_table.columns.insert(ColumnDefinition {
+            name: "updated_at".into(),
+            data_type: SqlColumnType::Timestamptz,
+            nullable: false,
+            is_primary_key: false,
+            default_value: None,
+            unique: false,
+        });
+
+        pub_table.columns.insert(ColumnDefinition {
+            name: "published_at".into(),
+            data_type: SqlColumnType::Timestamptz,
+            nullable: false,
+            is_primary_key: false,
+            default_value: Some("CURRENT_TIMESTAMP".into()),
+            unique: false,
+        });
+
+        pub_table.columns.insert(ColumnDefinition {
+            name: "published_by".into(),
+            data_type: SqlColumnType::Varchar(Some(255)),
+            nullable: true,
+            is_primary_key: false,
+            default_value: None,
+            unique: false,
+        });
+
+        if is_singleton {
+            pub_table.columns.insert(ColumnDefinition {
+                name: "_singleton".into(),
+                data_type: SqlColumnType::Boolean,
+                nullable: false,
+                is_primary_key: false,
+                default_value: Some("TRUE".into()),
+                unique: true,
+            });
+            pub_table.indexes.insert(IndexDefinition::new(
+                format!("idx_{pub_table_name}__singleton"),
+                &pub_table_name,
+                vec!["_singleton".into()],
+                true,
+            ));
+        }
+
+        // Add user-declared attribute columns to published mirror table
+        for (attr_id, field_def) in &doc_type.fields {
+            let col_name = attribute_to_column_name(attr_id);
+            let data_type = map_field_type_to_sql(&field_def.field_type);
+            let nullable = !field_def.required;
+            let unique = field_def.unique;
+
+            pub_table.columns.insert(ColumnDefinition {
+                name: col_name.clone(),
+                data_type,
+                nullable,
+                is_primary_key: false,
+                default_value: None,
+                unique,
+            });
+
+            if unique {
+                let idx_name = index_name(&pub_table_name, &col_name);
+                pub_table.indexes.insert(IndexDefinition::new(
+                    idx_name,
+                    &pub_table_name,
+                    vec![col_name],
+                    true,
+                ));
+            }
+        }
+
+        // Foreign key to main entity table: id -> {table}.id ON DELETE CASCADE
+        pub_table.foreign_keys.insert(ForeignKeyDefinition::new(
+            published_fk_name(&pub_table_name),
+            vec!["id".into()],
+            &table_name,
+            vec!["id".into()],
+            ForeignKeyAction::Cascade,
+            ForeignKeyAction::NoAction,
+        ));
+
+        Some(pub_table)
+    } else {
+        None
+    };
+
+    // 4. Universal Link Tables for relations
+    let mut link_tables = Vec::new();
     let relations = registry.find_relations_for(&doc_type.id);
     for rel_view in relations {
-        match rel_view {
-            RelationView::Unidirectional { attr, kind, .. }
-            | RelationView::OwnerSide { attr, kind, .. } => {
-                match kind {
-                    OwnerRelationKind::HasOne => {
-                        // 1:1 and N:1 relations persist as `{attr}_id UUID` column
-                        let fk_col = foreign_key_column_name(&attr);
-                        table.columns.insert(ColumnDefinition {
-                            name: fk_col.clone(),
-                            data_type: SqlColumnType::Uuid,
-                            nullable: true,
-                            is_primary_key: false,
-                            default_value: None,
-                            unique: false,
-                        });
+        let (attr, kind, target_type) = match rel_view {
+            RelationView::Unidirectional {
+                attr,
+                kind,
+                target_type,
+            } => (attr, kind, target_type),
+            RelationView::OwnerSide {
+                attr,
+                kind,
+                other_type,
+            } => (attr, kind, other_type),
+            RelationView::InverseSide { .. } => continue,
+        };
 
-                        let idx = index_name(&table_name, &fk_col);
-                        table.indexes.insert(IndexDefinition::new(
-                            idx,
-                            &table_name,
-                            vec![fk_col],
-                            false,
-                        ));
-                    }
-                    OwnerRelationKind::HasMany => {
-                        // N:N relations persist as junction table `{owner_table}__{owner_attr}`
-                        let j_name = junction_table_name(&table_name, &attr);
-                        let mut j_table = TableDefinition::new(&j_name, true, false);
+        let target_table = if let Some(target_dt) = registry.find_type(&target_type) {
+            document_type_to_table_name(target_dt)
+        } else {
+            kebab_to_snake(target_type.as_ref())
+        };
 
-                        j_table.columns.insert(ColumnDefinition {
-                            name: "owner_id".into(),
-                            data_type: SqlColumnType::Uuid,
-                            nullable: false,
-                            is_primary_key: true,
-                            default_value: None,
-                            unique: false,
-                        });
+        let link_name = link_table_name(&table_name, &attr);
+        let mut link_table = TableDefinition::new(&link_name, TableKind::Link, false);
 
-                        j_table.columns.insert(ColumnDefinition {
-                            name: "target_id".into(),
-                            data_type: SqlColumnType::Uuid,
-                            nullable: false,
-                            is_primary_key: true,
-                            default_value: None,
-                            unique: false,
-                        });
+        link_table.columns.insert(ColumnDefinition {
+            name: "owner_id".into(),
+            data_type: SqlColumnType::Uuid,
+            nullable: false,
+            is_primary_key: true,
+            default_value: None,
+            unique: false,
+        });
 
-                        // Index on target_id for fast reverse lookups
-                        let target_idx = junction_target_index_name(&j_name);
-                        j_table.indexes.insert(IndexDefinition::new(
-                            target_idx,
-                            &j_name,
-                            vec!["target_id".into()],
-                            false,
-                        ));
+        link_table.columns.insert(ColumnDefinition {
+            name: "target_id".into(),
+            data_type: SqlColumnType::Uuid,
+            nullable: false,
+            is_primary_key: true,
+            default_value: None,
+            unique: false,
+        });
 
-                        junction_tables.push(j_table);
-                    }
-                }
-            }
-            // InverseSide does not own columns or junction tables
-            RelationView::InverseSide { .. } => {}
+        // Foreign key referencing owner entity table
+        link_table.foreign_keys.insert(ForeignKeyDefinition::new(
+            link_owner_fk_name(&link_name),
+            vec!["owner_id".into()],
+            &table_name,
+            vec!["id".into()],
+            ForeignKeyAction::Cascade,
+            ForeignKeyAction::NoAction,
+        ));
+
+        // Foreign key referencing target entity table
+        link_table.foreign_keys.insert(ForeignKeyDefinition::new(
+            link_target_fk_name(&link_name),
+            vec!["target_id".into()],
+            &target_table,
+            vec!["id".into()],
+            ForeignKeyAction::Cascade,
+            ForeignKeyAction::NoAction,
+        ));
+
+        // If HasOne, enforce uniqueness on owner_id
+        if kind == OwnerRelationKind::HasOne {
+            link_table.indexes.insert(IndexDefinition::new(
+                link_owner_unique_index_name(&link_name),
+                &link_name,
+                vec!["owner_id".into()],
+                true,
+            ));
         }
+
+        // Index on target_id for fast reverse lookups
+        link_table.indexes.insert(IndexDefinition::new(
+            link_target_index_name(&link_name),
+            &link_name,
+            vec!["target_id".into()],
+            false,
+        ));
+        link_tables.push(link_table);
     }
 
-    (table, junction_tables)
+    (entity_table, published_table, link_tables)
 }
 
 /// Maps domain `FieldType` to physical `SqlColumnType`.
@@ -357,13 +518,20 @@ mod tests {
 
         let schema = build_desired_schema(&registry);
 
-        // Verify tables: articles, authors, tags, articles__tags
+        // Verify tables: articles, articles__published, authors, tags, articles__author_link, articles__tags_link
         assert!(schema.find_table("articles").is_some());
+        assert!(schema.find_table("articles__published").is_some());
         assert!(schema.find_table("authors").is_some());
         assert!(schema.find_table("tags").is_some());
-        assert!(schema.find_table("articles__tags").is_some());
+        assert!(schema.find_table("articles__author_link").is_some());
+        assert!(schema.find_table("articles__tags_link").is_some());
+
+        // Authors and tags have draft_and_publish: false -> no published mirror tables
+        assert!(schema.find_table("authors__published").is_none());
+        assert!(schema.find_table("tags__published").is_none());
 
         let articles_table = schema.find_table("articles").unwrap();
+        assert_eq!(articles_table.kind, TableKind::Entity);
         // Check audit columns
         assert!(articles_table.find_column("id").is_some());
         assert!(articles_table.find_column("version").is_some());
@@ -372,8 +540,8 @@ mod tests {
         // Check user columns
         assert!(articles_table.find_column("title").is_some());
         assert!(articles_table.find_column("slug").is_some());
-        // Check FK column
-        assert!(articles_table.find_column("author_id").is_some());
+        // Verify NO relation columns on the main entity table!
+        assert!(articles_table.find_column("author_id").is_none());
         // Check unique index on slug
         assert!(articles_table.find_index("idx_articles_slug").is_some());
         assert!(
@@ -383,11 +551,78 @@ mod tests {
                 .unique
         );
 
-        // Check junction table
-        let junction = schema.find_table("articles__tags").unwrap();
-        assert!(junction.is_junction);
-        assert!(junction.find_column("owner_id").is_some());
-        assert!(junction.find_column("target_id").is_some());
-        assert!(junction.find_index("idx_articles__tags_target").is_some());
+        // Check published mirror table
+        let published_table = schema.find_table("articles__published").unwrap();
+        assert_eq!(published_table.kind, TableKind::Published);
+        assert!(published_table.find_column("id").is_some());
+        assert!(published_table.find_column("published_version").is_some());
+        assert!(published_table.find_column("owner_id").is_some());
+        assert!(published_table.find_column("published_at").is_some());
+        assert!(published_table.find_column("published_by").is_some());
+        assert!(published_table.find_column("title").is_some());
+        assert!(published_table.find_column("slug").is_some());
+        assert!(
+            published_table
+                .find_index("idx_articles__published_slug")
+                .is_some()
+        );
+        let pub_fk = published_table
+            .find_foreign_key("fk_articles__published_id")
+            .unwrap();
+        assert_eq!(pub_fk.referenced_table, "articles");
+        assert_eq!(pub_fk.columns, vec!["id"]);
+        assert_eq!(pub_fk.referenced_columns, vec!["id"]);
+        assert_eq!(pub_fk.on_delete, ForeignKeyAction::Cascade);
+
+        // Check HasOne link table: articles__author_link
+        let author_link = schema.find_table("articles__author_link").unwrap();
+        assert!(author_link.is_junction());
+        assert_eq!(author_link.kind, TableKind::Link);
+        assert!(author_link.find_column("owner_id").is_some());
+        assert!(author_link.find_column("target_id").is_some());
+        // Foreign keys to articles and authors
+        let owner_fk = author_link
+            .find_foreign_key("fk_articles__author_link_owner")
+            .unwrap();
+        assert_eq!(owner_fk.referenced_table, "articles");
+        let target_fk = author_link
+            .find_foreign_key("fk_articles__author_link_target")
+            .unwrap();
+        assert_eq!(target_fk.referenced_table, "authors");
+        // HasOne has unique index on owner_id
+        assert!(
+            author_link
+                .find_index("uq_articles__author_link_owner")
+                .is_some()
+        );
+        assert!(
+            author_link
+                .find_index("uq_articles__author_link_owner")
+                .unwrap()
+                .unique
+        );
+        assert!(
+            author_link
+                .find_index("idx_articles__author_link_target")
+                .is_some()
+        );
+
+        // Check HasMany link table: articles__tags_link
+        let tags_link = schema.find_table("articles__tags_link").unwrap();
+        assert!(tags_link.is_junction());
+        assert_eq!(tags_link.kind, TableKind::Link);
+        assert!(tags_link.find_column("owner_id").is_some());
+        assert!(tags_link.find_column("target_id").is_some());
+        // HasMany does NOT have unique index on owner_id
+        assert!(
+            tags_link
+                .find_index("uq_articles__tags_link_owner")
+                .is_none()
+        );
+        assert!(
+            tags_link
+                .find_index("idx_articles__tags_link_target")
+                .is_some()
+        );
     }
 }

@@ -30,25 +30,108 @@ impl DatabaseSchema {
     }
 }
 
+/// The architectural classification of a database table in Luminair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum TableKind {
+    /// A main document instance working draft table (e.g., `articles`, `site_setting`).
+    #[default]
+    Entity,
+    /// A published mirror table with at most one row per instance (e.g., `articles__published`).
+    Published,
+    /// A universal relation link table (e.g., `articles__tags_link`, `articles__author_link`).
+    Link,
+}
+
+/// Referential action triggered on update or delete of a foreign key constraint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ForeignKeyAction {
+    #[default]
+    Cascade,
+    Restrict,
+    SetNull,
+    NoAction,
+}
+
+/// Definition of a database foreign key constraint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForeignKeyDefinition {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub referenced_table: String,
+    pub referenced_columns: Vec<String>,
+    pub on_delete: ForeignKeyAction,
+    pub on_update: ForeignKeyAction,
+}
+
+impl ForeignKeyDefinition {
+    pub fn new(
+        name: impl Into<String>,
+        columns: Vec<String>,
+        referenced_table: impl Into<String>,
+        referenced_columns: Vec<String>,
+        on_delete: ForeignKeyAction,
+        on_update: ForeignKeyAction,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            columns,
+            referenced_table: referenced_table.into(),
+            referenced_columns,
+            on_delete,
+            on_update,
+        }
+    }
+}
+
+impl PartialEq for ForeignKeyDefinition {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+impl Eq for ForeignKeyDefinition {}
+
+impl Hash for ForeignKeyDefinition {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+    }
+}
+
+impl Borrow<str> for ForeignKeyDefinition {
+    fn borrow(&self) -> &str {
+        &self.name
+    }
+}
+
 /// Definition of a database table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableDefinition {
     pub name: String,
     pub columns: IndexSet<ColumnDefinition>,
     pub indexes: IndexSet<IndexDefinition>,
-    pub is_junction: bool,
+    pub foreign_keys: IndexSet<ForeignKeyDefinition>,
+    pub kind: TableKind,
     pub is_singleton: bool,
 }
 
 impl TableDefinition {
-    pub fn new(name: impl Into<String>, is_junction: bool, is_singleton: bool) -> Self {
+    pub fn new(name: impl Into<String>, kind: TableKind, is_singleton: bool) -> Self {
         Self {
             name: name.into(),
             columns: IndexSet::new(),
             indexes: IndexSet::new(),
-            is_junction,
+            foreign_keys: IndexSet::new(),
+            kind,
             is_singleton,
         }
+    }
+
+    pub fn is_junction(&self) -> bool {
+        self.kind == TableKind::Link
+    }
+
+    pub fn is_published(&self) -> bool {
+        self.kind == TableKind::Published
     }
 
     pub fn find_column(&self, name: &str) -> Option<&ColumnDefinition> {
@@ -57,6 +140,10 @@ impl TableDefinition {
 
     pub fn find_index(&self, name: &str) -> Option<&IndexDefinition> {
         self.indexes.get(name)
+    }
+
+    pub fn find_foreign_key(&self, name: &str) -> Option<&ForeignKeyDefinition> {
+        self.foreign_keys.get(name)
     }
 }
 
@@ -247,7 +334,7 @@ mod tests {
     #[test]
     fn test_table_definition_borrow_lookup() {
         let mut schema = DatabaseSchema::new();
-        let mut table = TableDefinition::new("articles", false, false);
+        let mut table = TableDefinition::new("articles", TableKind::Entity, false);
         let col = ColumnDefinition::new("title", SqlColumnType::Text, false, false);
         table.columns.insert(col);
 
@@ -257,6 +344,7 @@ mod tests {
         let found = schema.find_table("articles");
         assert!(found.is_some());
         assert_eq!(found.unwrap().name, "articles");
+        assert_eq!(found.unwrap().kind, TableKind::Entity);
 
         let col_found = found.unwrap().find_column("title");
         assert!(col_found.is_some());
@@ -268,7 +356,7 @@ mod tests {
 
     #[test]
     fn test_index_definition_borrow_lookup() {
-        let mut table = TableDefinition::new("articles", false, false);
+        let mut table = TableDefinition::new("articles", TableKind::Entity, false);
         let idx = IndexDefinition::new(
             "idx_articles_title",
             "articles",
@@ -279,6 +367,27 @@ mod tests {
 
         assert!(table.find_index("idx_articles_title").is_some());
         assert!(table.find_index("unknown").is_none());
+    }
+
+    #[test]
+    fn test_foreign_key_definition_borrow_lookup() {
+        let mut table = TableDefinition::new("articles__published", TableKind::Published, false);
+        let fk = ForeignKeyDefinition::new(
+            "fk_articles__published_id",
+            vec!["id".into()],
+            "articles",
+            vec!["id".into()],
+            ForeignKeyAction::Cascade,
+            ForeignKeyAction::NoAction,
+        );
+        table.foreign_keys.insert(fk);
+
+        assert!(
+            table
+                .find_foreign_key("fk_articles__published_id")
+                .is_some()
+        );
+        assert!(table.find_foreign_key("unknown").is_none());
     }
 
     #[test]

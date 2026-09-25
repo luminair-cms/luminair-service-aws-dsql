@@ -10,7 +10,7 @@ AWS DSQL is a distributed, serverless relational database compatible with Postgr
 - **Distributed Transactions & OCC**: Optimistic concurrency control; retry on conflict (`409 Conflict` / code `40001` serialization failure).
 - **No DDL in Transactions**: All dynamic DDL migrations execute outside transaction blocks (`-- no-transaction` in static SQL, individual autocommit statements in dynamic DDL).
 - **Idempotent DDL**: Use `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`.
-- **Foreign Keys**: Static system tables (`role_permissions`, `user_role_assignments`) enforce referential integrity via physical SQL foreign keys (`REFERENCES roles(id) ON DELETE CASCADE`). Dynamic document tables and junction tables do not generate physical SQL `REFERENCES` constraints (to avoid distributed deadlocks, circular lock issues, and cross-shard operational constraints on AWS DSQL); they rely on indexed UUID columns and composite primary keys.
+- **Foreign Keys**: AWS Aurora DSQL natively supports foreign keys (`REFERENCES ... ON DELETE CASCADE`, etc.). Static system tables (`role_permissions`, `user_role_assignments`) and dynamic tables (`{table}__published`, `{owner}__{attr}_link`) enforce referential integrity with cascading deletes at the database level.
 
 ---
 
@@ -56,14 +56,18 @@ First-class domain entity modeling relationships between document types (ADR-004
 - **`target_type`**: `DocumentTypeId`.
 - **`inverse`**: `Option<RelationInverse>` with `inverse_attr: AttributeId` for bidirectional relations.
 
-### 2.4. `DocumentInstance` & `DocumentSnapshot`
+### 2.4. `DocumentInstance` & Publication Model
 - **`id`**: `DocumentInstanceId` (`Uuid` v7).
 - **`document_type_id`**: `DocumentTypeId`.
 - **`owner_id`**: `UserId`.
 - **`version`**: `i64` (OCC counter).
 - **`publication_state`**: `PublicationState::Draft { last_published_revision }` or `PublicationState::Published { revision }`.
 - **`content`**: `DocumentContent` (`fields: HashMap<AttributeId, ContentValue>`).
-- **`snapshots`**: When published, stores an immutable audit record in `document_snapshots`.
+- **Publication Architecture (Two-Table Model)**:
+  - Working drafts reside in the primary entity table `{table}`.
+  - When published, the active revision is stored in `{table}__published` with `id UUID PRIMARY KEY REFERENCES {table}(id) ON DELETE CASCADE`.
+  - Exactly at most one row per instance is stored in `{table}__published` (fast GET queries without joins).
+  - Deleting the instance from `{table}` cascades and deletes the published mirror row automatically.
 
 ### 2.5. RBAC & Auth Entities
 - **`Role`**: Builtin (`admin`, `editor`, `viewer`) and custom roles with permissions (`resource:action`).
@@ -77,10 +81,9 @@ First-class domain entity modeling relationships between document types (ADR-004
 
 ### 3.1. System Tables (Static SQL Migrations)
 Created via `infrastructure/migrations/`:
-- `document_snapshots`: Immutable published revisions across all document types.
 - `roles`: RBAC role definitions (`admin`, `editor`, `viewer`, custom).
-- `role_permissions`: Granular and wildcard permission grants.
-- `user_role_assignments`: OIDC identity to role mapping.
+- `role_permissions`: Granular and wildcard permission grants (`REFERENCES roles(id) ON DELETE CASCADE`).
+- `user_role_assignments`: OIDC identity to role mapping (`REFERENCES roles(id) ON DELETE CASCADE`).
 - `access_requests`: Self-service user onboarding queue.
 - `shadow_users`: Local cache of verified OIDC identities.
 
@@ -88,7 +91,7 @@ Created via `infrastructure/migrations/`:
 Derived dynamically from `SchemaRegistry` (ADR-008, ADR-009):
 - **Collections**: Plural name converted to snake_case $\rightarrow$ e.g. `blog-articles` $\rightarrow$ `blog_articles`.
 - **Singletons**: Singular name converted to snake_case $\rightarrow$ e.g. `site-setting` $\rightarrow$ `site_setting`.
-  - Singletons enforce a single row invariant via `CONSTRAINT single_row CHECK (id = '00000000-0000-0000-0000-000000000000')` or a single-row constraint index.
+  - Singletons enforce a single row invariant via a `_singleton BOOLEAN NOT NULL DEFAULT TRUE UNIQUE` column and index.
 - **Attributes / Columns**: Attribute IDs converted from kebab-case to snake_case $\rightarrow$ e.g. `header-image` $\rightarrow$ `header_image`.
 - **Standard Audit Columns**: Present on all generated document tables:
   ```sql
@@ -96,21 +99,37 @@ Derived dynamically from `SchemaRegistry` (ADR-008, ADR-009):
   version BIGINT NOT NULL DEFAULT 1,
   owner_id VARCHAR(255) NOT NULL,
   publication_state VARCHAR(50) NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
   ```
-- **Relation Persistence** (ADR-009):
-  - **1:1 and N:1 (HasOne)**: Stored as foreign key column on owner table: `{owner_attr}_id UUID` with index (unique index for 1:1, non-unique index for N:1). No physical SQL `REFERENCES` constraint is generated on dynamic tables for AWS DSQL.
-  - **N:N (HasMany)**: Dedicated junction table using double underscore `__`:
-    `{owner_table}__{owner_attr}`
-    ```sql
-    CREATE TABLE {owner_table}__{owner_attr} (
-        owner_id UUID NOT NULL,
-        target_id UUID NOT NULL,
-        PRIMARY KEY (owner_id, target_id)
-    );
-    CREATE INDEX idx_{owner_table}__{owner_attr}_target ON {owner_table}__{owner_attr} (target_id);
-    ```
+- **Published Mirror Tables (`{table}__published`)**:
+  Generated when `draft_and_publish: true`:
+  ```sql
+  CREATE TABLE {table}__published (
+      id UUID PRIMARY KEY REFERENCES {table}(id) ON DELETE CASCADE,
+      published_version BIGINT NOT NULL,
+      owner_id VARCHAR(255) NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL,
+      published_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      published_by VARCHAR(255),
+      -- typed attribute columns matching {table} ...
+  );
+  ```
+- **Universal Relation Link Tables (`{owner}__{attr}_link`)**:
+  All relations (`HasOne` and `HasMany`) use a dedicated link table. No relation foreign key columns are added to entity tables.
+  ```sql
+  CREATE TABLE {owner_table}__{owner_attr}_link (
+      owner_id UUID NOT NULL REFERENCES {owner_table}(id) ON DELETE CASCADE,
+      target_id UUID NOT NULL REFERENCES {target_table}(id) ON DELETE CASCADE,
+      PRIMARY KEY (owner_id, target_id)
+  );
+  -- If HasOne: enforce single target per owner instance:
+  CREATE UNIQUE INDEX uq_{owner_table}__{owner_attr}_link_owner ON {owner_table}__{owner_attr}_link (owner_id);
+  -- In all cases: fast reverse lookups:
+  CREATE INDEX idx_{owner_table}__{owner_attr}_link_target ON {owner_table}__{owner_attr}_link (target_id);
+  ```
+  *Key Advantage*: Changing a relation from `HasOne` to `HasMany` requires zero DDL changes to the link table itself—only dropping the unique index on `owner_id`.*
 
 ---
 

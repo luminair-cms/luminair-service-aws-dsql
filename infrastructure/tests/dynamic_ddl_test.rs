@@ -202,10 +202,16 @@ fn test_build_desired_schema_ast_and_diff() {
     let (registry, _) = load_schema_registry(&temp_dir).unwrap();
     let desired = build_desired_schema(&registry);
 
-    // Expected tables: articles, authors, site_setting
+    // Expected tables: articles, articles__published, authors, site_setting, articles__author_link
     assert!(desired.find_table("articles").is_some());
+    assert!(desired.find_table("articles__published").is_some());
     assert!(desired.find_table("authors").is_some());
     assert!(desired.find_table("site_setting").is_some());
+    assert!(desired.find_table("articles__author_link").is_some());
+
+    // SingleType and collection without draftAndPublish do not generate published tables
+    assert!(desired.find_table("authors__published").is_none());
+    assert!(desired.find_table("site_setting__published").is_none());
 
     let articles = desired.find_table("articles").unwrap();
     assert!(articles.find_column("id").is_some());
@@ -213,19 +219,57 @@ fn test_build_desired_schema_ast_and_diff() {
     assert!(articles.find_column("slug").is_some());
     assert!(articles.find_column("views").is_some());
     assert!(articles.find_column("content").is_some());
-    assert!(articles.find_column("author_id").is_some());
+    // In the new universal link table design, relation columns are NOT added to entity tables
+    assert!(articles.find_column("author_id").is_none());
+
+    // Published mirror table assertions
+    let published = desired.find_table("articles__published").unwrap();
+    assert!(published.find_column("id").is_some());
+    assert!(published.find_column("published_version").is_some());
+    assert!(published.find_column("title").is_some());
+    assert!(published.find_column("slug").is_some());
+    assert!(
+        published
+            .find_foreign_key("fk_articles__published_id")
+            .is_some()
+    );
+
+    // Universal link table assertions
+    let link = desired.find_table("articles__author_link").unwrap();
+    assert!(link.is_junction());
+    assert!(link.find_column("owner_id").is_some());
+    assert!(link.find_column("target_id").is_some());
+    assert!(
+        link.find_foreign_key("fk_articles__author_link_owner")
+            .is_some()
+    );
+    assert!(
+        link.find_foreign_key("fk_articles__author_link_target")
+            .is_some()
+    );
+    // HasOne has unique index on owner_id
+    assert!(link.find_index("uq_articles__author_link_owner").is_some());
+    assert!(
+        link.find_index("uq_articles__author_link_owner")
+            .unwrap()
+            .unique
+    );
+    assert!(
+        link.find_index("idx_articles__author_link_target")
+            .is_some()
+    );
 
     // SingleType singleton invariant
     let site_setting = desired.find_table("site_setting").unwrap();
     assert!(site_setting.is_singleton);
     assert!(site_setting.find_column("_singleton").is_some());
 
-    // Empty actual schema -> diff produces 3 CreateTable + indexes
+    // Empty actual schema -> diff produces 5 CreateTable + indexes
     let actual = DatabaseSchema::new();
     let steps = compute_diff(&actual, &desired, SafetyPolicy::AdditiveOnly).unwrap();
     let plan = plan_migrations(steps);
 
-    assert_eq!(plan.steps.len(), 3);
+    assert_eq!(plan.steps.len(), 5);
     for step in &plan.steps {
         let sql = step_to_sql(step);
         assert!(sql.starts_with(r#"CREATE TABLE IF NOT EXISTS"#));

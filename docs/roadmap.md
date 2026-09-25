@@ -90,15 +90,14 @@ Consists of two complementary mechanisms aligned with [ADR-006](./adr/ADR-006-sc
 #### 3A. Static SQL Migrations (`infrastructure/migrations/`) — Complete
 * **Objective**: Versioned schema for all non-dynamic system tables using `sqlx migrate`.
 * **Tables**:
-  * `document_snapshots`: Immutable JSONB revision store with unique `(instance_id, revision)`.
   * `roles`: Role definitions with unique `name`.
   * `role_permissions`: Permission grants with `NULLS NOT DISTINCT` constraint and `VARCHAR(64)` for kebab-case `document_type_id`.
   * `user_role_assignments`: OIDC `sub` (`user_id`) to role mapping.
   * `access_requests`: User onboarding queue with partial unique index for active requests.
   * `shadow_users`: Local cache of verified OIDC identities.
-  *(Note: `system_config` table was eliminated in favor of immutable startup JSON, matching ADR-006).*
+  *(Note: Global `document_snapshots` table was eliminated in favor of per-document-type `{table}__published` mirror tables, and `system_config` table was eliminated in favor of immutable startup JSON per ADR-006).*
 * **Seed Data**: Built-in `admin`, `editor`, and `viewer` roles with deterministic UUID v7 identifiers.
-* **Compatibility**: Zero sequences/serial columns, all migration files start with `-- no-transaction` for AWS DSQL.
+* **Compatibility**: Zero sequences/serial columns, native Aurora DSQL foreign keys with `ON DELETE CASCADE`, all migration files start with `-- no-transaction` for AWS DSQL.
 * **Deliverable**: `MIGRATOR` embedded runner, deterministic role constants, and 7 unit/integration tests verifying DSQL rules.
 
 #### 3B. JSON Schema Loader & Dynamic DDL (`infrastructure/src/schema_loader/`) — Complete
@@ -107,12 +106,14 @@ Consists of two complementary mechanisms aligned with [ADR-006](./adr/ADR-006-sc
   1. Parse files in `schema/document-types/*.json`, `schema/relations/*.json`, and `schema/system-config.json`.
   2. Validate constraints, reserved SQL keywords, file name matches `singularName`, and relation pairings.
   3. Construct and cache `SchemaRegistry` and `SystemConfig`.
-  4. Build `DatabaseSchema` AST (`DesiredSchema`) with zero-duplication `IndexSet<T>` and `Borrow<str>`.
+  4. Build `DatabaseSchema` AST (`DesiredSchema`) with zero-duplication `IndexSet<T>` and `Borrow<str>`:
+     - Two-Table model: generates `{table}` and `{table}__published` (when `draft_and_publish: true`) with `id UUID PRIMARY KEY REFERENCES {table}(id) ON DELETE CASCADE`.
+     - Universal relation link tables: generates `{owner_table}__{owner_attr}_link` for all relations (`HasOne` and `HasMany`) with native foreign keys and `ON DELETE CASCADE`.
   5. Introspect live database schema via `information_schema` and `pg_catalog` (`ActualSchema`).
   6. Detect schema drift and compute migration steps with configurable `SafetyPolicy`.
-  7. Topologically plan migrations (drops before creates; entity tables before junction tables).
+  7. Topologically plan migrations (destruction: drop indexes $\rightarrow$ link tables $\rightarrow$ published tables $\rightarrow$ entity tables $\rightarrow$ columns; construction: entity tables $\rightarrow$ published tables $\rightarrow$ link tables $\rightarrow$ columns $\rightarrow$ indexes).
   8. Type-safe DDL generation via `sea-query` with `IF NOT EXISTS` / `IF EXISTS` executed outside transaction blocks for AWS DSQL.
-* **Deliverable**: Complete `infrastructure::schema_loader` module (`naming`, `model`, `loader`, `builder`, `introspector`, `diff`, `planner`, `executor`), 32 unit tests, and 4 integration tests.
+* **Deliverable**: Complete `infrastructure::schema_loader` module (`naming`, `model`, `loader`, `builder`, `introspector`, `diff`, `planner`, `executor`), 37 unit tests, and 4 integration tests.
 
 ---
 
@@ -121,10 +122,10 @@ Consists of two complementary mechanisms aligned with [ADR-006](./adr/ADR-006-sc
 * **Objective**: Provide concrete PostgreSQL and AWS DSQL implementations of the repository port traits defined in `domain::ports`.
 * **Key Implementations**:
   * `SqlxDocumentInstanceRepository`:
-    * Constructs dynamic SQL queries targeting the per-type table `{plural_name}` (or `{singular_name}` for SingleTypes) resolved from `SchemaRegistry`.
+    * Constructs dynamic SQL queries targeting the per-type table `{table}` (draft state) and `{table}__published` (published active state).
+    * Persists and queries relations via universal link tables `{owner}__{attr}_link`.
     * Serializes/deserializes inline JSONB fields (`LocalizedText`, `Json`).
     * Implements pagination (`Page<T>`) and field filtering.
-  * `SqlxSnapshotRepository`: Queries and appends to `document_snapshots`.
   * `SqlxRoleRepository`, `SqlxUserRoleAssignmentRepository`, `SqlxAccessRequestRepository`.
   *(Note: System configuration is loaded at startup from `schema/system-config.json` and served in-memory by `SystemConfigService`, requiring no database persistence per ADR-004 and ADR-006).*
 * **Testing Strategy**: Real database integration tests using `#[sqlx::test]` against PostgreSQL test instances.

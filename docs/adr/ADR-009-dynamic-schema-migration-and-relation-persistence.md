@@ -82,37 +82,38 @@ To eliminate identifier duplication and preserve deterministic schema ordering, 
 - $O(1)$ lookup by borrowed key (`table.columns.get("title_header")`).
 - Exact insertion order preservation from JSON schema to DDL execution.
 
-### 2. Relation Persistence & Naming Model
+### 2. Two-Table Publication Model & Relation Persistence
 
-Following [ADR-008](./ADR-008-naming-conventions-and-routing.md), domain identifiers in `kebab-case` map deterministically to SQL `snake_case`:
+#### A. Two-Table Model for Document Types
+For every document type:
+- **Main Entity Table `{table}`**: Holds current working drafts.
+  - Audit columns: `id UUID PRIMARY KEY`, `version BIGINT NOT NULL DEFAULT 1`, `owner_id VARCHAR(255) NOT NULL`, `publication_state VARCHAR(50) NOT NULL`, `created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP`, `updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP`.
+  - User attribute columns (e.g. `title TEXT NOT NULL`, `slug VARCHAR(255) NOT NULL`).
+  - No relation foreign key columns are placed on `{table}`.
+- **Published Mirror Table `{table}__published`**:
+  - Generated when `draft_and_publish: true`.
+  - Primary key: `id UUID PRIMARY KEY REFERENCES {table}(id) ON DELETE CASCADE`.
+  - Holds at most **one row** per instance (the currently active published revision).
+  - Audit columns: `published_version BIGINT NOT NULL`, `owner_id VARCHAR(255) NOT NULL`, `created_at TIMESTAMPTZ NOT NULL`, `updated_at TIMESTAMPTZ NOT NULL`, `published_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP`, `published_by VARCHAR(255)`.
+  - User attribute columns mirror `{table}`, enabling direct, high-performance `GET` queries without joins or JSONB unpacking.
+  - Deleting an instance from `{table}` cascades and deletes the published row automatically.
 
-#### A. Single-Column Relations (1:1 and N:1)
-Stored directly as a column on the owner table:
-- **Column Name**: `{to_snake_case(attribute_id)}_id UUID`
-  - Example: `category` $\rightarrow$ `category_id UUID`
-  - Example: `featured-image` $\rightarrow$ `featured_image_id UUID`
-- **1:1 Constraint**: `CREATE UNIQUE INDEX uq_{table}_{col} ON {table} ({col});`
-- **N:1 Constraint**: `CREATE INDEX idx_{table}_{col} ON {table} ({col});`
-
-#### B. Virtual Inverse Side (1:N)
-The target document type does **not** store an array of IDs in its table. Instead, it is resolved at query time by filtering the owner table: `WHERE {owner_attr}_id = $1`.
-
-#### C. Many-to-Many Relations (N:N)
-Stored in a dedicated junction table:
-- **Junction Table Name**: `{owner_plural}__{owner_attr}`
-  - Uses double underscore (`__`) to prevent collisions with entity tables that contain single underscores.
-  - Example: `articles` $\leftrightarrow$ `tags` via `tags` $\rightarrow$ `articles__tags`
-  - Example: `partner_booking_categories` $\leftrightarrow$ `partner_categories` via `categories` $\rightarrow$ `partner_booking_categories__categories`
-- **Columns**:
-  - `{owner_singular}_id UUID NOT NULL` (e.g. `article_id`)
-  - `{target_singular}_id UUID NOT NULL` (e.g. `tag_id`)
+#### B. Universal Link Tables (`{owner_table}__{owner_attr}_link`)
+All relations (`HasOne` and `HasMany`, unidirectional and bidirectional) are persisted in dedicated universal link tables:
+- **Link Table Name**: `{owner_table}__{owner_attr}_link`
+  - Suffix `_link` explicitly distinguishes relation link tables from entity tables and published mirror tables.
+- **Columns & Foreign Keys**:
+  - `owner_id UUID NOT NULL REFERENCES {owner_table}(id) ON DELETE CASCADE`
+  - `target_id UUID NOT NULL REFERENCES {target_table}(id) ON DELETE CASCADE`
+  - `PRIMARY KEY (owner_id, target_id)`
 - **Indexes**:
-  - `PRIMARY KEY ({owner_singular}_id, {target_singular}_id)`
-  - Secondary Index: `CREATE INDEX idx_{junction}_{target_singular}_id ON {junction} ({target_singular}_id);`
+  - `HasOne`: Enforces at most one target per owner via `CREATE UNIQUE INDEX uq_{link_table}_owner ON {link_table} (owner_id);`.
+  - Reverse lookups: Supported in all cases via `CREATE INDEX idx_{link_table}_target ON {link_table} (target_id);`.
+- **Zero-Migration Advantage**: Changing a relation type between `HasOne` and `HasMany` requires zero DDL changes to the link table itself; only the unique index on `owner_id` is created or dropped.
 
 ### 3. Database Catalog Introspection
 
-The actual schema is inspected by querying `information_schema.columns`, `information_schema.tables`, and `pg_catalog.pg_index` for the `public` schema. Static and system tables (`_sqlx_migrations`, `document_snapshots`, `roles`, `role_permissions`, `user_role_assignments`, `access_requests`, `shadow_users`) are explicitly filtered out.
+The actual schema is inspected by querying `information_schema.columns`, `information_schema.tables`, `information_schema.table_constraints`, and `pg_catalog.pg_indexes` for the `public` schema. Static system tables (`_sqlx_migrations`, `roles`, `role_permissions`, `user_role_assignments`, `access_requests`, `shadow_users`, `document_snapshots`) are explicitly filtered out.
 
 ### 4. Diffing Engine & Migration Steps
 
@@ -122,12 +123,10 @@ Comparing `ActualSchema` against `DesiredSchema` produces an ordered set of atom
 pub enum MigrationStep {
     CreateTable(TableDefinition),
     AddColumn { table: String, column: ColumnDefinition },
-    AlterColumnType { table: String, column: String, from: SqlColumnType, to: SqlColumnType },
-    AlterColumnNullability { table: String, column: String, nullable: bool },
     CreateIndex(IndexDefinition),
-    DropIndex { table: String, name: String },
+    DropIndex { name: String, table: String },
     DropColumn { table: String, column: String },
-    DropTable { table: String },
+    DropTable { name: String, kind: TableKind },
 }
 ```
 
@@ -135,19 +134,27 @@ pub enum MigrationStep {
 
 - **`SafetyPolicy::AdditiveOnly` (Default for Production)**:
   - Executes: `CreateTable`, `AddColumn`, `CreateIndex`.
-  - Warns or fails when encountering destructive drift (`DropColumn`, `DropTable`, narrowing column types).
+  - Fails when encountering destructive drift (`DropColumn`, `DropTable`, `DropIndex`).
 - **`SafetyPolicy::AllowDestructive` (Opt-in for CI/Test environments)**:
   - Allows dropping orphan tables, columns, or indexes.
 
 ### 6. Dependency Graph & Topologically Ordered Execution
 
-Operations are ordered topologically by dependency phase:
-1. `CreateTable` (entity tables)
-2. `CreateTable` (junction tables)
-3. `AddColumn`
-4. `AlterColumnType` / `AlterColumnNullability`
-5. `CreateIndex`
-6. Destructive steps (`DropIndex` $\rightarrow$ `DropColumn` $\rightarrow$ `DropTable`, if permitted).
+Operations are ordered topologically by dependency phase to satisfy all foreign key references:
+
+**Destruction Phase (Reverse Dependency Order)**:
+1. Drop Indexes
+2. Drop Link Tables (`TableKind::Link`)
+3. Drop Published Mirror Tables (`TableKind::Published`)
+4. Drop Entity Tables (`TableKind::Entity`)
+5. Drop Columns
+
+**Construction Phase (Forward Dependency Order)**:
+6. Create Entity Tables (`TableKind::Entity`)
+7. Create Published Mirror Tables (`TableKind::Published`, references Entity table PK)
+8. Create Link Tables (`TableKind::Link`, references Entity tables)
+9. Add Columns
+10. Create Indexes
 
 Each step generates a PostgreSQL DDL string via `sea-query::PostgresQueryBuilder` and executes independently outside of a transaction block.
 
@@ -156,11 +163,12 @@ Each step generates a PostgreSQL DDL string via `sea-query::PostgresQueryBuilder
 ## Consequences
 
 ### Positive
-- **DSQL & PostgreSQL Ready**: Fully adheres to DSQL non-transactional DDL and UUID v7 PKs while avoiding cross-table OCC lock contention.
-- **Memory Optimized**: Replaces bloated `HashMap<Key, StructWithKey>` with compact, order-preserving `IndexSet<T>`.
-- **Zero Ambiguity**: Clear naming rules for all relation types; no collisions due to `__` junction table standard.
-- **Production Safe**: Prevents accidental data loss through strict additive safety policy by default.
-- **Robust DDL Generation**: Leverages `sea-query` to eliminate manual SQL string formatting bugs.
+- **Native Aurora DSQL Foreign Keys**: Referential integrity is enforced with cascading deletes at the database engine level.
+- **High-Performance Public Queries**: Published rows are stored in typed columns in `{table}__published`, allowing simple single-table `SELECT` queries without JSONB deserialization overhead.
+- **Clean Table Evolution**: Changing relation cardinality (`HasOne` $\leftrightarrow$ `HasMany`) does not migrate or alter physical link tables.
+- **Memory Optimized**: Replaces bloated maps with compact, order-preserving `IndexSet<T>` with $O(1)$ lookups.
+- **Production Safe**: Additive-only safety policy guards against accidental data loss.
 
 ### Negative / Trade-offs
-- Non-transactional DDL execution means that if a failure occurs halfway through multi-step migrations, previously executed statements remain applied. All generated DDL statements must therefore remain strictly idempotent (`IF NOT EXISTS`, `IF EXISTS`).
+- Two tables per document type (`{table}` and `{table}__published`) increases table count in the database schema.
+- Non-transactional DDL execution requires all statements to remain strictly idempotent (`IF NOT EXISTS`, `IF EXISTS`).

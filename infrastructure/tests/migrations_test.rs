@@ -167,7 +167,10 @@ async fn test_db_migrations_execution_and_idempotency_if_database_available() {
 
     let table_names: Vec<String> = rows.into_iter().map(|r| r.0).collect();
 
-    assert!(table_names.contains(&"document_snapshots".to_string()));
+    assert!(
+        !table_names.contains(&"document_snapshots".to_string()),
+        "document_snapshots table has been replaced by per-type published mirror tables"
+    );
     assert!(table_names.contains(&"roles".to_string()));
     assert!(table_names.contains(&"role_permissions".to_string()));
     assert!(table_names.contains(&"user_role_assignments".to_string()));
