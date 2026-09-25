@@ -21,14 +21,12 @@ impl FieldConstraint {
             FieldConstraint::Pattern(_) => matches!(
                 ft,
                 FieldType::Primitive(PrimitiveType::Text | PrimitiveType::Uid)
-                    | FieldType::Email
-                    | FieldType::Url
+                    | FieldType::LocalizedText
             ),
             FieldConstraint::MinLength(_) | FieldConstraint::MaxLength(_) => matches!(
                 ft,
                 FieldType::Primitive(PrimitiveType::Text | PrimitiveType::Uid)
-                    | FieldType::Email
-                    | FieldType::Url
+                    | FieldType::LocalizedText
             ),
             FieldConstraint::MinInteger(_) | FieldConstraint::MaxInteger(_) => {
                 matches!(ft, FieldType::Primitive(PrimitiveType::Integer(_)))
@@ -59,8 +57,9 @@ mod tests {
         let constraint = FieldConstraint::Pattern("^[a-z]+$".to_string());
         assert!(constraint.is_applicable_for(&FieldType::Primitive(PrimitiveType::Text)));
         assert!(constraint.is_applicable_for(&FieldType::Primitive(PrimitiveType::Uid)));
-        assert!(constraint.is_applicable_for(&FieldType::Email));
-        assert!(constraint.is_applicable_for(&FieldType::Url));
+        assert!(!constraint.is_applicable_for(&FieldType::Email));
+        assert!(!constraint.is_applicable_for(&FieldType::Url));
+        assert!(constraint.is_applicable_for(&FieldType::LocalizedText));
     }
 
     #[test]
@@ -111,13 +110,15 @@ mod tests {
 
         assert!(min_len.is_applicable_for(&FieldType::Primitive(PrimitiveType::Text)));
         assert!(min_len.is_applicable_for(&FieldType::Primitive(PrimitiveType::Uid)));
-        assert!(min_len.is_applicable_for(&FieldType::Email));
-        assert!(min_len.is_applicable_for(&FieldType::Url));
+        assert!(!min_len.is_applicable_for(&FieldType::Email));
+        assert!(!min_len.is_applicable_for(&FieldType::Url));
+        assert!(min_len.is_applicable_for(&FieldType::LocalizedText));
 
         assert!(max_len.is_applicable_for(&FieldType::Primitive(PrimitiveType::Text)));
         assert!(max_len.is_applicable_for(&FieldType::Primitive(PrimitiveType::Uid)));
-        assert!(max_len.is_applicable_for(&FieldType::Email));
-        assert!(max_len.is_applicable_for(&FieldType::Url));
+        assert!(!max_len.is_applicable_for(&FieldType::Email));
+        assert!(!max_len.is_applicable_for(&FieldType::Url));
+        assert!(max_len.is_applicable_for(&FieldType::LocalizedText));
 
         assert!(!min_len.is_applicable_for(&FieldType::Primitive(PrimitiveType::Boolean)));
     }

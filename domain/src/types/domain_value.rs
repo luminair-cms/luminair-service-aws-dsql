@@ -4,18 +4,31 @@ use serde::{Deserialize, Serialize};
 
 use super::field_type::FieldType;
 use super::primitive_value::PrimitiveValue;
+use crate::value_objects::{Email, Url};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DomainValue {
     Primitive(PrimitiveValue),
-    Email(String),
-    Url(String),
+    Email(Email),
+    Url(Url),
     Json(HashMap<String, PrimitiveValue>),
 }
 
 impl From<PrimitiveValue> for DomainValue {
     fn from(p: PrimitiveValue) -> Self {
         DomainValue::Primitive(p)
+    }
+}
+
+impl From<Email> for DomainValue {
+    fn from(e: Email) -> Self {
+        DomainValue::Email(e)
+    }
+}
+
+impl From<Url> for DomainValue {
+    fn from(u: Url) -> Self {
+        DomainValue::Url(u)
     }
 }
 
@@ -133,11 +146,11 @@ mod tests {
                 FieldType::Primitive(PrimitiveType::Uuid),
             ),
             (
-                DomainValue::Email("test@example.com".into()),
+                DomainValue::Email(Email::try_new("test@example.com").unwrap()),
                 FieldType::Email,
             ),
             (
-                DomainValue::Url("https://example.com".into()),
+                DomainValue::Url(Url::try_new("https://example.com").unwrap()),
                 FieldType::Url,
             ),
             (

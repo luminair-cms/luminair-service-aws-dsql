@@ -102,8 +102,32 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
 - **Startup Anti-Collision Guard**: Validates that no collection `plural_name` can ever collide with a singleton `singular_name`.
 - **SQL Persistence Mapping**: Domain `kebab-case` maps deterministically to SQL `snake_case` (e.g. `partner-booking-categories` -> `partner_booking_categories`, `title-header` -> `title_header`).
 
+## 2026-09-24 — Dynamic Schema Migration, Drift Detection, and Relation Persistence Model (ADR-009)
+
+- **`IndexSet<T>` + `Borrow<Q>` AST Optimization**: Replaces redundant map structures (`BTreeMap<String, TableDefinition>`, `HashMap<AttributeId, FieldDefinition>`) with `IndexSet<T>`. Custom implementations of `Borrow<str>` / `Borrow<AttributeId>` and ID-based hashing eliminate key duplication while preserving exact insertion order for DDL generation.
+- **Relation Persistence Model**:
+  - **1:1 and N:1**: Stored as foreign key column on the owner table as `{to_snake_case(attribute_id)}_id UUID` (with unique index for 1:1, non-unique index for N:1).
+  - **1:N**: Virtual inverse in domain; queried at runtime via `WHERE {owner_attr}_id = $1`.
+  - **N:N**: Stored in dedicated junction table `{owner_plural}__{owner_attr}` with `(owner_id UUID, target_id UUID)` and double-underscore anti-collision prefix.
+- **Drift Detection & Diffing**: Introspects `information_schema` and `pg_catalog` (ignoring system/static tables) and diffs against `DesiredSchema`, producing an ordered list of `MigrationStep`s.
+- **Topologically Ordered DDL Planning**: Sorts steps into phases (Entity Tables $\rightarrow$ Junction Tables $\rightarrow$ Columns $\rightarrow$ Constraints/Indexes).
+- **Safety Policy**: Production runs in `SafetyPolicy::AdditiveOnly` (drops are prohibited/flagged); destructive alterations require explicit `SafetyPolicy::AllowDestructive`.
+- **`sea-query` DDL Execution**: Generates PostgreSQL-compliant DDL via `sea-query::PostgresQueryBuilder` and executes statements individually outside transaction blocks for AWS DSQL compatibility.
+
+## 2026-09-25 — Self-Validating Email/Url Value Objects & Schema Constraint Ergonomics
+
+- **Dedicated Nutype Value Objects for Email and Url**:
+  - `DomainValue::Email(Email)` and `DomainValue::Url(Url)` replace raw string wrappers.
+  - Constructed via `nutype` with predicate validators using `email_address::EmailAddress` and `url::Url`.
+  - Self-validating by construction: `FieldConstraint::MinLength`, `FieldConstraint::MaxLength`, and `FieldConstraint::Pattern` are inapplicable to `Email` and `Url` fields and are rejected during schema loading.
+- **JSON Schema Constraints Ergonomics (`min`/`max` Shortcuts)**:
+  - JSON schema attributes support `{ "min": X, "max": Y }` shortcuts for strings (`text`, `uid`, `localizedText`), automatically mapping to `MinLength(X)` and `MaxLength(Y)`.
+  - Serde aliases support `minimalLength`/`maximalLength`, `minimalInteger`/`maximalInteger`, `minimalDecimal`/`maximalDecimal`, and `minimum`/`maximum`.
+  - Duplicate constraint definitions are safely deduplicated.
+
 ---
 
 > **AI agents**: when you make a non-obvious decision during implementation, append an entry here.
 > Format: `## YYYY-MM-DD — Topic` followed by bullet points.
+
 

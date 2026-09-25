@@ -101,15 +101,18 @@ Consists of two complementary mechanisms aligned with [ADR-006](./adr/ADR-006-sc
 * **Compatibility**: Zero sequences/serial columns, all migration files start with `-- no-transaction` for AWS DSQL.
 * **Deliverable**: `MIGRATOR` embedded runner, deterministic role constants, and 7 unit/integration tests verifying DSQL rules.
 
-#### 3B. JSON Schema Loader & Dynamic DDL (`infrastructure/src/schema_loader/`)
+#### 3B. JSON Schema Loader & Dynamic DDL (`infrastructure/src/schema_loader/`) — Complete
 * **Objective**: Startup synchronization of document schemas from JSON files to in-memory `SchemaRegistry` and physical database tables.
 * **Workflow**:
-  1. Parse files in `schema/document-types/*.json` and `schema/relations/*.json`.
-  2. Validate constraints, reserved attribute names, and relation pairings.
-  3. Construct and cache `Arc<SchemaRegistry>` in application state.
-  4. Generate and run `CREATE TABLE IF NOT EXISTS {plural_name}` DDL statements.
-  5. Apply singleton index for `SingleType` schemas: `_singleton BOOLEAN NOT NULL DEFAULT TRUE CHECK (_singleton = TRUE)` with a unique index.
-  6. Inspect `information_schema.columns` to detect drift (missing columns in DB).
+  1. Parse files in `schema/document-types/*.json`, `schema/relations/*.json`, and `schema/system-config.json`.
+  2. Validate constraints, reserved SQL keywords, file name matches `singularName`, and relation pairings.
+  3. Construct and cache `SchemaRegistry` and `SystemConfig`.
+  4. Build `DatabaseSchema` AST (`DesiredSchema`) with zero-duplication `IndexSet<T>` and `Borrow<str>`.
+  5. Introspect live database schema via `information_schema` and `pg_catalog` (`ActualSchema`).
+  6. Detect schema drift and compute migration steps with configurable `SafetyPolicy`.
+  7. Topologically plan migrations (drops before creates; entity tables before junction tables).
+  8. Type-safe DDL generation via `sea-query` with `IF NOT EXISTS` / `IF EXISTS` executed outside transaction blocks for AWS DSQL.
+* **Deliverable**: Complete `infrastructure::schema_loader` module (`naming`, `model`, `loader`, `builder`, `introspector`, `diff`, `planner`, `executor`), 32 unit tests, and 4 integration tests.
 
 ---
 
