@@ -228,10 +228,10 @@ pub async fn introspect_database_schema(
         let cols = columns_by_table.remove(&tbl_name).unwrap_or_default();
         let idxs = indexes_by_table.remove(&tbl_name).unwrap_or_default();
         let fks = fks_by_table.remove(&tbl_name).unwrap_or_default();
-        let kind = if tbl_name.ends_with("__published") {
-            TableKind::Published
-        } else if tbl_name.ends_with("_link") || tbl_name.contains("__") {
+        let kind = if tbl_name.ends_with("_link") || tbl_name.ends_with("_link__published") {
             TableKind::Link
+        } else if tbl_name.ends_with("__published") {
+            TableKind::Published
         } else {
             TableKind::Entity
         };
@@ -289,5 +289,29 @@ mod tests {
         assert!(SYSTEM_TABLES.contains(&"roles"));
         assert!(SYSTEM_TABLES.contains(&"document_revision_snapshots"));
         assert!(SYSTEM_TABLES.contains(&"document_snapshots"));
+    }
+
+    #[test]
+    fn test_table_kind_classification() {
+        let classify = |tbl_name: &str| -> TableKind {
+            if tbl_name.ends_with("_link") || tbl_name.ends_with("_link__published") {
+                TableKind::Link
+            } else if tbl_name.ends_with("__published") {
+                TableKind::Published
+            } else {
+                TableKind::Entity
+            }
+        };
+
+        assert_eq!(classify("articles"), TableKind::Entity);
+        assert_eq!(classify("site_setting"), TableKind::Entity);
+        assert_eq!(classify("articles__published"), TableKind::Published);
+        assert_eq!(classify("site_setting__published"), TableKind::Published);
+        assert_eq!(classify("articles__tags_link"), TableKind::Link);
+        assert_eq!(classify("articles__tags_link__published"), TableKind::Link);
+        assert_eq!(
+            classify("articles__author_link__published"),
+            TableKind::Link
+        );
     }
 }

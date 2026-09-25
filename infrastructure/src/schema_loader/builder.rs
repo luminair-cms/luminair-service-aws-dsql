@@ -20,14 +20,15 @@ use super::model::{
 use super::naming::{
     attribute_to_column_name, document_type_to_table_name, index_name, kebab_to_snake,
     link_owner_fk_name, link_owner_unique_index_name, link_table_name, link_target_fk_name,
-    link_target_index_name, published_fk_name, published_table_name,
+    link_target_index_name, published_fk_name, published_link_table_name, published_table_name,
 };
 
 /// Builds the desired `DatabaseSchema` AST from the domain `SchemaRegistry`.
 pub fn build_desired_schema(registry: &SchemaRegistry) -> DatabaseSchema {
     let mut schema = DatabaseSchema::new();
     let mut published_tables = Vec::new();
-    let mut link_tables = Vec::new();
+    let mut draft_link_tables = Vec::new();
+    let mut published_link_tables = Vec::new();
 
     // 1. Iterate through all document types in the registry
     for name in registry.type_names() {
@@ -38,7 +39,13 @@ pub fn build_desired_schema(registry: &SchemaRegistry) -> DatabaseSchema {
             if let Some(pub_table) = opt_pub_table {
                 published_tables.push(pub_table);
             }
-            link_tables.extend(links);
+            for link in links {
+                if link.name.ends_with("__published") {
+                    published_link_tables.push(link);
+                } else {
+                    draft_link_tables.push(link);
+                }
+            }
         }
     }
 
@@ -47,9 +54,14 @@ pub fn build_desired_schema(registry: &SchemaRegistry) -> DatabaseSchema {
         schema.insert_table(pub_table);
     }
 
-    // 3. Insert all universal link tables
-    for link_table in link_tables {
-        schema.insert_table(link_table);
+    // 3. Insert all draft link tables
+    for draft_link in draft_link_tables {
+        schema.insert_table(draft_link);
+    }
+
+    // 4. Insert all published link tables
+    for pub_link in published_link_tables {
+        schema.insert_table(pub_link);
     }
 
     schema
@@ -314,8 +326,9 @@ fn build_document_type_tables(
             RelationView::InverseSide { .. } => continue,
         };
 
-        let target_table = if let Some(target_dt) = registry.find_type(&target_type) {
-            document_type_to_table_name(target_dt)
+        let target_dt = registry.find_type(&target_type);
+        let target_table = if let Some(dt) = target_dt {
+            document_type_to_table_name(dt)
         } else {
             kebab_to_snake(target_type.as_ref())
         };
@@ -379,6 +392,88 @@ fn build_document_type_tables(
             false,
         ));
         link_tables.push(link_table);
+
+        // If owner entity has draft_and_publish: true, generate published mirror link table
+        // enforcing Option A (Dual Link Tables) and Variant 1 (Public Filter Principle)
+        if doc_type.options.draft_and_publish {
+            let pub_link_name = published_link_table_name(&link_name);
+            let mut pub_link_table = TableDefinition::new(&pub_link_name, TableKind::Link, false);
+
+            pub_link_table.columns.insert(ColumnDefinition {
+                name: "owner_id".into(),
+                data_type: SqlColumnType::Uuid,
+                nullable: false,
+                is_primary_key: true,
+                default_value: None,
+                unique: false,
+            });
+
+            pub_link_table.columns.insert(ColumnDefinition {
+                name: "target_id".into(),
+                data_type: SqlColumnType::Uuid,
+                nullable: false,
+                is_primary_key: true,
+                default_value: None,
+                unique: false,
+            });
+
+            // Owner foreign key: owner_id -> {owner_table}__published.id ON DELETE CASCADE
+            let pub_owner_table = published_table_name(&table_name);
+            pub_link_table
+                .foreign_keys
+                .insert(ForeignKeyDefinition::new(
+                    link_owner_fk_name(&pub_link_name),
+                    vec!["owner_id".into()],
+                    &pub_owner_table,
+                    vec!["id".into()],
+                    ForeignKeyAction::Cascade,
+                    ForeignKeyAction::NoAction,
+                ));
+
+            // Variant 1 (Public Filter Principle) for target foreign key:
+            // - If target has draft_and_publish: true, target_id -> {target_table}__published.id ON DELETE CASCADE
+            // - If target has draft_and_publish: false, target_id -> {target_table}.id ON DELETE CASCADE
+            let target_has_draft_and_publish = target_dt
+                .map(|dt| dt.options.draft_and_publish)
+                .unwrap_or(false);
+
+            let pub_target_table = if target_has_draft_and_publish {
+                published_table_name(&target_table)
+            } else {
+                target_table.clone()
+            };
+
+            pub_link_table
+                .foreign_keys
+                .insert(ForeignKeyDefinition::new(
+                    link_target_fk_name(&pub_link_name),
+                    vec!["target_id".into()],
+                    &pub_target_table,
+                    vec!["id".into()],
+                    ForeignKeyAction::Cascade,
+                    ForeignKeyAction::NoAction,
+                ));
+
+            // If HasOne, enforce uniqueness on owner_id in published link table
+            if kind == OwnerRelationKind::HasOne {
+                pub_link_table.indexes.insert(IndexDefinition::new(
+                    link_owner_unique_index_name(&pub_link_name),
+                    &pub_link_name,
+                    vec!["owner_id".into()],
+                    true,
+                ));
+            }
+
+            // Reverse lookup index on target_id
+            pub_link_table.indexes.insert(IndexDefinition::new(
+                link_target_index_name(&pub_link_name),
+                &pub_link_name,
+                vec!["target_id".into()],
+                false,
+            ));
+
+            link_tables.push(pub_link_table);
+        }
     }
 
     (entity_table, published_table, link_tables)
@@ -624,5 +719,157 @@ mod tests {
                 .find_index("idx_articles__tags_link_target")
                 .is_some()
         );
+
+        // Check published mirror link tables (articles has draft_and_publish: true)
+        assert!(
+            schema
+                .find_table("articles__author_link__published")
+                .is_some()
+        );
+        assert!(
+            schema
+                .find_table("articles__tags_link__published")
+                .is_some()
+        );
+
+        // Check articles__author_link__published:
+        // owner references articles__published (id), target references authors (id) because author has draft_and_publish: false
+        let pub_author_link = schema
+            .find_table("articles__author_link__published")
+            .unwrap();
+        assert_eq!(pub_author_link.kind, TableKind::Link);
+        let pub_owner_fk = pub_author_link
+            .find_foreign_key("fk_articles__author_link__published_owner")
+            .unwrap();
+        assert_eq!(pub_owner_fk.referenced_table, "articles__published");
+        assert_eq!(pub_owner_fk.columns, vec!["owner_id"]);
+        assert_eq!(pub_owner_fk.referenced_columns, vec!["id"]);
+        assert_eq!(pub_owner_fk.on_delete, ForeignKeyAction::Cascade);
+
+        let pub_target_fk = pub_author_link
+            .find_foreign_key("fk_articles__author_link__published_target")
+            .unwrap();
+        assert_eq!(pub_target_fk.referenced_table, "authors");
+        assert_eq!(pub_target_fk.columns, vec!["target_id"]);
+        assert_eq!(pub_target_fk.referenced_columns, vec!["id"]);
+        assert_eq!(pub_target_fk.on_delete, ForeignKeyAction::Cascade);
+
+        assert!(
+            pub_author_link
+                .find_index("uq_articles__author_link__published_owner")
+                .is_some()
+        );
+        assert!(
+            pub_author_link
+                .find_index("idx_articles__author_link__published_target")
+                .is_some()
+        );
+
+        // Check articles__tags_link__published (HasMany):
+        let pub_tags_link = schema.find_table("articles__tags_link__published").unwrap();
+        assert_eq!(pub_tags_link.kind, TableKind::Link);
+        let pub_tags_owner_fk = pub_tags_link
+            .find_foreign_key("fk_articles__tags_link__published_owner")
+            .unwrap();
+        assert_eq!(pub_tags_owner_fk.referenced_table, "articles__published");
+        let pub_tags_target_fk = pub_tags_link
+            .find_foreign_key("fk_articles__tags_link__published_target")
+            .unwrap();
+        assert_eq!(pub_tags_target_fk.referenced_table, "tags");
+        assert!(
+            pub_tags_link
+                .find_index("uq_articles__tags_link__published_owner")
+                .is_none()
+        );
+        assert!(
+            pub_tags_link
+                .find_index("idx_articles__tags_link__published_target")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn test_published_link_table_with_published_target() {
+        let article_type_id = DocumentTypeId::try_new("article").unwrap();
+        let author_type_id = DocumentTypeId::try_new("author").unwrap();
+
+        let article_dt = DocumentType {
+            id: article_type_id.clone(),
+            kind: DocumentKind::Collection,
+            info: DocumentTypeInfo {
+                title: "Articles".into(),
+                singular_name: "article".into(),
+                plural_name: "articles".into(),
+                description: None,
+            },
+            options: DocumentTypeOptions {
+                draft_and_publish: true,
+            },
+            fields: IndexMap::new(),
+        };
+
+        // Author ALSO has draft_and_publish: true
+        let author_dt = DocumentType {
+            id: author_type_id.clone(),
+            kind: DocumentKind::Collection,
+            info: DocumentTypeInfo {
+                title: "Authors".into(),
+                singular_name: "author".into(),
+                plural_name: "authors".into(),
+                description: None,
+            },
+            options: DocumentTypeOptions {
+                draft_and_publish: true,
+            },
+            fields: IndexMap::new(),
+        };
+
+        let author_rel = Relation {
+            id: RelationId::new(Uuid::now_v7()),
+            owner_type: article_type_id,
+            owner_attr: AttributeId::try_new("author").unwrap(),
+            owner_kind: OwnerRelationKind::HasOne,
+            target_type: author_type_id,
+            inverse: None,
+        };
+
+        let registry = SchemaRegistry::new(vec![article_dt, author_dt], vec![author_rel]);
+        let schema = build_desired_schema(&registry);
+
+        // articles, articles__published, authors, authors__published, articles__author_link, articles__author_link__published
+        assert!(schema.find_table("articles").is_some());
+        assert!(schema.find_table("articles__published").is_some());
+        assert!(schema.find_table("authors").is_some());
+        assert!(schema.find_table("authors__published").is_some());
+        assert!(schema.find_table("articles__author_link").is_some());
+        assert!(
+            schema
+                .find_table("articles__author_link__published")
+                .is_some()
+        );
+
+        // In draft link table: target references base "authors" table
+        let draft_link = schema.find_table("articles__author_link").unwrap();
+        let draft_target_fk = draft_link
+            .find_foreign_key("fk_articles__author_link_target")
+            .unwrap();
+        assert_eq!(draft_target_fk.referenced_table, "authors");
+
+        // In published link table: Variant 1 (Public Filter Principle)
+        // target references "authors__published" table!
+        let pub_link = schema
+            .find_table("articles__author_link__published")
+            .unwrap();
+        let pub_target_fk = pub_link
+            .find_foreign_key("fk_articles__author_link__published_target")
+            .unwrap();
+        assert_eq!(pub_target_fk.referenced_table, "authors__published");
+        assert_eq!(pub_target_fk.on_delete, ForeignKeyAction::Cascade);
+
+        let pub_owner_fk = pub_link
+            .find_foreign_key("fk_articles__author_link__published_owner")
+            .unwrap();
+        assert_eq!(pub_owner_fk.referenced_table, "articles__published");
+        assert_eq!(pub_owner_fk.on_delete, ForeignKeyAction::Cascade);
     }
 }

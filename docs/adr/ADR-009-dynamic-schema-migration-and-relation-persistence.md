@@ -111,6 +111,17 @@ All relations (`HasOne` and `HasMany`, unidirectional and bidirectional) are per
   - Reverse lookups: Supported in all cases via `CREATE INDEX idx_{link_table}_target ON {link_table} (target_id);`.
 - **Zero-Migration Advantage**: Changing a relation type between `HasOne` and `HasMany` requires zero DDL changes to the link table itself; only the unique index on `owner_id` is created or dropped.
 
+#### C. Dual Link Tables for Draft & Publish (`{owner}__{attr}_link__published`)
+To support relations under the Two-Table model, we adopt **Option A (Dual Link Tables)** with **Variant 1 (Public Filter Principle)**:
+- When the owner entity has `draft_and_publish: true`, a mirror published link table `{owner_table}__{owner_attr}_link__published` is generated.
+- **Foreign Key Definitions**:
+  - `owner_id UUID NOT NULL REFERENCES {owner_table}__published(id) ON DELETE CASCADE`
+  - `target_id UUID NOT NULL REFERENCES {target_ref_table}(id) ON DELETE CASCADE` where:
+    - If target has `draft_and_publish: true`: references `{target_table}__published(id) ON DELETE CASCADE`.
+    - If target has `draft_and_publish: false`: references `{target_table}(id) ON DELETE CASCADE`.
+- **Public Filter Principle**: Enforcing the target foreign key at the database constraint level guarantees that an unpublished target entity can **never** be linked or visible in published state.
+- **Automatic Cleanup**: When an entity is unpublished (deleted from `{owner_table}__published` or `{target_table}__published`) or deleted entirely, native Aurora DSQL cascading deletes automatically remove the published relation link.
+
 ### 3. Database Catalog Introspection
 
 The actual schema is inspected by querying `information_schema.columns`, `information_schema.tables`, `information_schema.table_constraints`, and `pg_catalog.pg_indexes` for the `public` schema. Static system tables (`_sqlx_migrations`, `roles`, `role_permissions`, `user_role_assignments`, `access_requests`, `shadow_users`, `document_snapshots`) are explicitly filtered out.
@@ -144,17 +155,19 @@ Operations are ordered topologically by dependency phase to satisfy all foreign 
 
 **Destruction Phase (Reverse Dependency Order)**:
 1. Drop Indexes
-2. Drop Link Tables (`TableKind::Link`)
-3. Drop Published Mirror Tables (`TableKind::Published`)
-4. Drop Entity Tables (`TableKind::Entity`)
-5. Drop Columns
+2. Drop Published Link Tables (`TableKind::Link` ending in `__published`)
+3. Drop Draft Link Tables (`TableKind::Link` not ending in `__published`)
+4. Drop Published Mirror Tables (`TableKind::Published`)
+5. Drop Entity Tables (`TableKind::Entity`)
+6. Drop Columns
 
 **Construction Phase (Forward Dependency Order)**:
-6. Create Entity Tables (`TableKind::Entity`)
-7. Create Published Mirror Tables (`TableKind::Published`, references Entity table PK)
-8. Create Link Tables (`TableKind::Link`, references Entity tables)
-9. Add Columns
-10. Create Indexes
+7. Create Entity Tables (`TableKind::Entity`)
+8. Create Published Mirror Tables (`TableKind::Published`, references Entity table PK)
+9. Create Draft Link Tables (`TableKind::Link` not ending in `__published`, references Entity tables)
+10. Create Published Link Tables (`TableKind::Link` ending in `__published`, references Published/Entity tables)
+11. Add Columns
+12. Create Indexes
 
 Each step generates a PostgreSQL DDL string via `sea-query::PostgresQueryBuilder` and executes independently outside of a transaction block.
 

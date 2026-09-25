@@ -202,12 +202,17 @@ fn test_build_desired_schema_ast_and_diff() {
     let (registry, _) = load_schema_registry(&temp_dir).unwrap();
     let desired = build_desired_schema(&registry);
 
-    // Expected tables: articles, articles__published, authors, site_setting, articles__author_link
+    // Expected tables: articles, articles__published, authors, site_setting, articles__author_link, articles__author_link__published
     assert!(desired.find_table("articles").is_some());
     assert!(desired.find_table("articles__published").is_some());
     assert!(desired.find_table("authors").is_some());
     assert!(desired.find_table("site_setting").is_some());
     assert!(desired.find_table("articles__author_link").is_some());
+    assert!(
+        desired
+            .find_table("articles__author_link__published")
+            .is_some()
+    );
 
     // SingleType and collection without draftAndPublish do not generate published tables
     assert!(desired.find_table("authors__published").is_none());
@@ -234,7 +239,7 @@ fn test_build_desired_schema_ast_and_diff() {
             .is_some()
     );
 
-    // Universal link table assertions
+    // Draft link table assertions
     let link = desired.find_table("articles__author_link").unwrap();
     assert!(link.is_junction());
     assert!(link.find_column("owner_id").is_some());
@@ -259,17 +264,50 @@ fn test_build_desired_schema_ast_and_diff() {
             .is_some()
     );
 
+    // Published link table assertions (Dual Link Tables with Variant 1 Public Filter Principle)
+    let pub_link = desired
+        .find_table("articles__author_link__published")
+        .unwrap();
+    assert!(pub_link.is_junction());
+    assert!(pub_link.find_column("owner_id").is_some());
+    assert!(pub_link.find_column("target_id").is_some());
+    let pub_owner_fk = pub_link
+        .find_foreign_key("fk_articles__author_link__published_owner")
+        .unwrap();
+    assert_eq!(pub_owner_fk.referenced_table, "articles__published");
+    let pub_target_fk = pub_link
+        .find_foreign_key("fk_articles__author_link__published_target")
+        .unwrap();
+    // Author has draftAndPublish: false -> points to base authors table
+    assert_eq!(pub_target_fk.referenced_table, "authors");
+    assert!(
+        pub_link
+            .find_index("uq_articles__author_link__published_owner")
+            .is_some()
+    );
+    assert!(
+        pub_link
+            .find_index("uq_articles__author_link__published_owner")
+            .unwrap()
+            .unique
+    );
+    assert!(
+        pub_link
+            .find_index("idx_articles__author_link__published_target")
+            .is_some()
+    );
+
     // SingleType singleton invariant
     let site_setting = desired.find_table("site_setting").unwrap();
     assert!(site_setting.is_singleton);
     assert!(site_setting.find_column("_singleton").is_some());
 
-    // Empty actual schema -> diff produces 5 CreateTable + indexes
+    // Empty actual schema -> diff produces 6 CreateTable + indexes
     let actual = DatabaseSchema::new();
     let steps = compute_diff(&actual, &desired, SafetyPolicy::AdditiveOnly).unwrap();
     let plan = plan_migrations(steps);
 
-    assert_eq!(plan.steps.len(), 5);
+    assert_eq!(plan.steps.len(), 6);
     for step in &plan.steps {
         let sql = step_to_sql(step);
         assert!(sql.starts_with(r#"CREATE TABLE IF NOT EXISTS"#));

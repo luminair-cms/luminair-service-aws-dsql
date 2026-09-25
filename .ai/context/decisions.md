@@ -160,9 +160,27 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
   - Destruction order: drop indexes $\rightarrow$ drop link tables $\rightarrow$ drop published mirror tables $\rightarrow$ drop entity tables $\rightarrow$ drop columns.
   - Construction order: create entity tables $\rightarrow$ create published mirror tables $\rightarrow$ create link tables $\rightarrow$ add columns $\rightarrow$ create indexes.
 
+## 2026-09-25 — Dual Link Tables & Public Filter Principle for Draft and Publish Relations
+
+- **Dual Link Tables Model (Option A)**:
+  - For every relation `{owner}__{attr}_link`, if the owner entity has `draft_and_publish: true`, generate a mirror published link table `{owner}__{attr}_link__published`.
+  - Draft link table `{owner}__{attr}_link` persists working relationships between base/draft entity records.
+  - Published link table `{owner}__{attr}_link__published` persists published relationships between active published instances.
+- **Public Filter Principle (Variant 1)**:
+  - `owner_id UUID NOT NULL REFERENCES {owner_table}__published(id) ON DELETE CASCADE`
+  - Target foreign key:
+    - If target has `draft_and_publish: true`: references `{target_table}__published(id) ON DELETE CASCADE`.
+    - If target has `draft_and_publish: false`: references `{target_table}(id) ON DELETE CASCADE`.
+  - Database constraint enforcement: An unpublished target entity can never be linked in published state, eliminating broken/draft links in public queries with zero runtime check overhead.
+  - Cascading cleanup: When an entity is unpublished or deleted, native Aurora DSQL cascading deletes automatically remove the published relation link.
+- **Refined 12-Step Topological Migration Lifecycle**:
+  - Destruction: drop indexes $\rightarrow$ drop published link tables $\rightarrow$ drop draft link tables $\rightarrow$ drop published tables $\rightarrow$ drop entity tables $\rightarrow$ drop columns.
+  - Construction: create entity tables $\rightarrow$ create published tables $\rightarrow$ create draft link tables $\rightarrow$ create published link tables $\rightarrow$ add columns $\rightarrow$ create indexes.
+
 ---
 
 > **AI agents**: when you make a non-obvious decision during implementation, append an entry here.
 > Format: `## YYYY-MM-DD — Topic` followed by bullet points.
+
 
 

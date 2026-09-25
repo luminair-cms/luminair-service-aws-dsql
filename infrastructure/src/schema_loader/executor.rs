@@ -67,7 +67,7 @@ fn build_create_table_sql(table: &TableDefinition) -> String {
     if table.is_junction() {
         // Composite PK (owner_id, target_id)
         for col in &table.columns {
-            let mut col_def = build_column_def(col);
+            let mut col_def = build_column_def_internal(col, false);
             stmt.col(&mut col_def);
         }
         stmt.primary_key(
@@ -127,8 +127,8 @@ fn build_create_index_sql(index: &IndexDefinition) -> String {
     stmt.to_string(PostgresQueryBuilder)
 }
 
-/// Maps a `ColumnDefinition` to a `sea_query::ColumnDef`.
-pub fn build_column_def(col: &ColumnDefinition) -> ColumnDef {
+/// Internal helper to map a `ColumnDefinition` to a `sea_query::ColumnDef`, optionally including inline primary_key().
+fn build_column_def_internal(col: &ColumnDefinition, include_pk: bool) -> ColumnDef {
     let mut def = ColumnDef::new(Alias::new(&col.name));
 
     match col.data_type {
@@ -174,7 +174,7 @@ pub fn build_column_def(col: &ColumnDefinition) -> ColumnDef {
         def.not_null();
     }
 
-    if col.is_primary_key {
+    if include_pk && col.is_primary_key {
         def.primary_key();
     }
 
@@ -191,6 +191,11 @@ pub fn build_column_def(col: &ColumnDefinition) -> ColumnDef {
     }
 
     def
+}
+
+/// Maps a `ColumnDefinition` to a `sea_query::ColumnDef`.
+pub fn build_column_def(col: &ColumnDefinition) -> ColumnDef {
+    build_column_def_internal(col, col.is_primary_key)
 }
 
 /// Executes a `MigrationPlan` statement-by-statement outside transaction blocks.
@@ -343,8 +348,59 @@ mod tests {
 
         assert!(sql.starts_with(r#"CREATE TABLE IF NOT EXISTS "articles__tags_link""#));
         assert!(sql.contains(r#"PRIMARY KEY ("owner_id", "target_id")"#));
+        // Verify columns do NOT contain redundant inline PRIMARY KEY
+        assert!(!sql.contains(r#""owner_id" uuid NOT NULL PRIMARY KEY"#));
+        assert!(!sql.contains(r#""target_id" uuid NOT NULL PRIMARY KEY"#));
         assert!(sql.contains(r#"CONSTRAINT "fk_articles__tags_link_owner" FOREIGN KEY ("owner_id") REFERENCES "articles" ("id") ON DELETE CASCADE"#));
         assert!(sql.contains(r#"CONSTRAINT "fk_articles__tags_link_target" FOREIGN KEY ("target_id") REFERENCES "tags" ("id") ON DELETE CASCADE"#));
+    }
+
+    #[test]
+    fn test_step_to_sql_published_link_table() {
+        let mut table =
+            TableDefinition::new("articles__tags_link__published", TableKind::Link, false);
+        table.columns.insert(ColumnDefinition {
+            name: "owner_id".into(),
+            data_type: SqlColumnType::Uuid,
+            nullable: false,
+            is_primary_key: true,
+            default_value: None,
+            unique: false,
+        });
+        table.columns.insert(ColumnDefinition {
+            name: "target_id".into(),
+            data_type: SqlColumnType::Uuid,
+            nullable: false,
+            is_primary_key: true,
+            default_value: None,
+            unique: false,
+        });
+        table.foreign_keys.insert(ForeignKeyDefinition::new(
+            "fk_articles__tags_link__published_owner",
+            vec!["owner_id".into()],
+            "articles__published",
+            vec!["id".into()],
+            ModelFkAction::Cascade,
+            ModelFkAction::NoAction,
+        ));
+        table.foreign_keys.insert(ForeignKeyDefinition::new(
+            "fk_articles__tags_link__published_target",
+            vec!["target_id".into()],
+            "tags__published",
+            vec!["id".into()],
+            ModelFkAction::Cascade,
+            ModelFkAction::NoAction,
+        ));
+
+        let step = MigrationStep::CreateTable(table);
+        let sql = step_to_sql(&step);
+
+        assert!(sql.starts_with(r#"CREATE TABLE IF NOT EXISTS "articles__tags_link__published""#));
+        assert!(sql.contains(r#"PRIMARY KEY ("owner_id", "target_id")"#));
+        assert!(!sql.contains(r#""owner_id" uuid NOT NULL PRIMARY KEY"#));
+        assert!(!sql.contains(r#""target_id" uuid NOT NULL PRIMARY KEY"#));
+        assert!(sql.contains(r#"CONSTRAINT "fk_articles__tags_link__published_owner" FOREIGN KEY ("owner_id") REFERENCES "articles__published" ("id") ON DELETE CASCADE"#));
+        assert!(sql.contains(r#"CONSTRAINT "fk_articles__tags_link__published_target" FOREIGN KEY ("target_id") REFERENCES "tags__published" ("id") ON DELETE CASCADE"#));
     }
 
     #[test]

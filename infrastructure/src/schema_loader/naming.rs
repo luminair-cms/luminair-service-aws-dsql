@@ -131,6 +131,12 @@ pub fn published_table_name(table_name: &str) -> String {
     format!("{table_name}__published")
 }
 
+/// Derives the physical database table name for a published mirror link table.
+/// E.g. `articles__tags_link` -> `articles__tags_link__published`.
+pub fn published_link_table_name(link_table: &str) -> String {
+    format!("{link_table}__published")
+}
+
 /// Derives the column name for an `AttributeId`.
 pub fn attribute_to_column_name(attr: &AttributeId) -> String {
     kebab_to_snake(attr.as_ref())
@@ -269,6 +275,30 @@ mod tests {
         assert_eq!(
             published_table_name("site_setting"),
             "site_setting__published"
+        );
+    }
+
+    #[test]
+    fn test_published_link_table_name() {
+        assert_eq!(
+            published_link_table_name("articles__tags_link"),
+            "articles__tags_link__published"
+        );
+        assert_eq!(
+            link_owner_fk_name("articles__tags_link__published"),
+            "fk_articles__tags_link__published_owner"
+        );
+        assert_eq!(
+            link_target_fk_name("articles__tags_link__published"),
+            "fk_articles__tags_link__published_target"
+        );
+        assert_eq!(
+            link_owner_unique_index_name("articles__tags_link__published"),
+            "uq_articles__tags_link__published_owner"
+        );
+        assert_eq!(
+            link_target_index_name("articles__tags_link__published"),
+            "idx_articles__tags_link__published_target"
         );
     }
 

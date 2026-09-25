@@ -117,7 +117,7 @@ Derived dynamically from `SchemaRegistry` (ADR-008, ADR-009):
   );
   ```
 - **Universal Relation Link Tables (`{owner}__{attr}_link`)**:
-  All relations (`HasOne` and `HasMany`) use a dedicated link table. No relation foreign key columns are added to entity tables.
+  All relations (`HasOne` and `HasMany`) use dedicated link tables. No relation foreign key columns are added to entity tables.
   ```sql
   CREATE TABLE {owner_table}__{owner_attr}_link (
       owner_id UUID NOT NULL REFERENCES {owner_table}(id) ON DELETE CASCADE,
@@ -130,6 +130,24 @@ Derived dynamically from `SchemaRegistry` (ADR-008, ADR-009):
   CREATE INDEX idx_{owner_table}__{owner_attr}_link_target ON {owner_table}__{owner_attr}_link (target_id);
   ```
   *Key Advantage*: Changing a relation from `HasOne` to `HasMany` requires zero DDL changes to the link table itself—only dropping the unique index on `owner_id`.*
+
+- **Dual Link Tables for Draft & Publish (`{owner}__{attr}_link__published`)**:
+  When the owner document type has `draft_and_publish: true`, a mirror published link table is generated:
+  ```sql
+  CREATE TABLE {owner_table}__{owner_attr}_link__published (
+      owner_id UUID NOT NULL REFERENCES {owner_table}__published(id) ON DELETE CASCADE,
+      target_id UUID NOT NULL REFERENCES {target_ref_table}(id) ON DELETE CASCADE,
+      PRIMARY KEY (owner_id, target_id)
+  );
+  -- If HasOne: enforce single target per published owner instance:
+  CREATE UNIQUE INDEX uq_{owner_table}__{owner_attr}_link__published_owner ON {owner_table}__{owner_attr}_link__published (owner_id);
+  -- Reverse index for fast lookups:
+  CREATE INDEX idx_{owner_table}__{owner_attr}_link__published_target ON {owner_table}__{owner_attr}_link__published (target_id);
+  ```
+  **Variant 1: Public Filter Principle**:
+  - If the target document type has `draft_and_publish: true`: `{target_ref_table}` references `{target_table}__published(id)`. This enforces at the database foreign key level that an unpublished target cannot be referenced in a published document.
+  - If the target document type has `draft_and_publish: false`: `{target_ref_table}` references `{target_table}(id)`.
+  - When an entity is unpublished or deleted, native Aurora DSQL cascading deletes automatically remove its published links with zero dangling references.
 
 ---
 
