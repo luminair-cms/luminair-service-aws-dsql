@@ -1,17 +1,16 @@
 use indexmap::IndexSet;
 use std::collections::HashMap;
 
-use crate::entities::document_instance::DocumentContent;
-use crate::entities::document_type::DocumentType;
-use crate::entities::field_definition::FieldConstraint;
-use crate::entities::relation::{Relation, RelationView};
-use crate::entities::system_config::SystemConfig;
+use super::document_type::DocumentType;
+use super::field_definition::FieldConstraint;
+use super::ids::{AttributeId, DocumentTypeId, RelationId};
+use super::relation::{Relation, RelationView};
+use super::types::FieldType;
+use crate::content::instance::DocumentContent;
+use crate::content::values::{ContentValue, DomainValue, PrimitiveValue};
 use crate::errors::DomainError;
-use crate::types::content_value::ContentValue;
-use crate::types::domain_value::DomainValue;
-use crate::types::field_type::FieldType;
-use crate::types::primitive_value::PrimitiveValue;
-use crate::value_objects::{AttributeId, DocumentTypeId, LocaleId, RelationId};
+use crate::system::config::SystemConfig;
+use crate::system::ids::LocaleId;
 
 /// Evaluates string constraints (MinLength, MaxLength, Pattern) against a string value.
 /// If `locale` is provided, includes it in the error reason.
@@ -284,14 +283,13 @@ mod tests {
     use indexmap::IndexSet;
     use uuid::Uuid;
 
-    use crate::entities::document_instance::PublicationState;
-    use crate::entities::document_type::{DocumentKind, DocumentTypeInfo, DocumentTypeOptions};
-    use crate::entities::field_definition::FieldDefinition;
-    use crate::entities::relation::{OwnerRelationKind, RelationInverse};
-    use crate::types::domain_value::DomainValue;
-    use crate::types::field_type::PrimitiveType;
-    use crate::types::primitive_value::PrimitiveValue;
-    use crate::value_objects::{AttributeId, LocaleId, SystemConfigId};
+    use crate::content::instance::PublicationState;
+    use crate::content::values::{DomainValue, PrimitiveValue};
+    use crate::schema::document_type::{DocumentKind, DocumentTypeInfo, DocumentTypeOptions};
+    use crate::schema::field_definition::FieldDefinition;
+    use crate::schema::relation::{OwnerRelationKind, RelationInverse};
+    use crate::schema::types::PrimitiveType;
+    use crate::system::ids::{LocaleId, SystemConfigId};
 
     fn make_test_setup() -> (DocumentType, SystemConfig) {
         let type_id = DocumentTypeId::try_new("article").unwrap();

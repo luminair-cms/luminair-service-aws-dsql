@@ -1,6 +1,6 @@
-use crate::entities::auth::role::{Permission, Role};
-use crate::entities::document_instance::DocumentInstance;
-use crate::value_objects::UserId;
+use super::ids::UserId;
+use super::role::{Permission, Role};
+use crate::content::instance::DocumentInstance;
 
 pub struct AuthorizationService;
 
@@ -38,7 +38,8 @@ mod tests {
     use chrono::Utc;
     use uuid::Uuid;
 
-    use crate::value_objects::DocumentTypeId;
+    use crate::auth::ids::RoleId;
+    use crate::schema::ids::DocumentTypeId;
 
     fn make_test_fixture() -> (UserId, UserId, DocumentTypeId, DocumentInstance) {
         let owner = UserId::try_new("owner_user").unwrap();
@@ -95,7 +96,7 @@ mod tests {
         let (_, other, type_id, instance) = make_test_fixture();
         let action = Permission::ReadDocument(Some(type_id.clone()));
         let role = Role {
-            id: crate::value_objects::RoleId::new(Uuid::now_v7()),
+            id: RoleId::new(Uuid::now_v7()),
             name: "reader".into(),
             description: None,
             permissions: vec![Permission::ReadDocument(Some(type_id))],
@@ -114,7 +115,7 @@ mod tests {
         let (_, other, type_id, instance) = make_test_fixture();
         let action = Permission::ReadDocument(Some(type_id));
         let role = Role {
-            id: crate::value_objects::RoleId::new(Uuid::now_v7()),
+            id: RoleId::new(Uuid::now_v7()),
             name: "global_reader".into(),
             description: None,
             permissions: vec![Permission::ReadDocument(None)], // wildcard
@@ -133,7 +134,7 @@ mod tests {
         let (_, other, type_id, instance) = make_test_fixture();
         let action = Permission::DeleteDocument(Some(type_id.clone()));
         let role = Role {
-            id: crate::value_objects::RoleId::new(Uuid::now_v7()),
+            id: RoleId::new(Uuid::now_v7()),
             name: "reader".into(),
             permissions: vec![Permission::ReadDocument(Some(type_id))],
             description: None,
@@ -163,7 +164,7 @@ mod tests {
     fn test_admin_all_permissions() {
         let (_, other, type_id, instance) = make_test_fixture();
         let admin_role = Role {
-            id: crate::value_objects::RoleId::new(Uuid::now_v7()),
+            id: RoleId::new(Uuid::now_v7()),
             name: "admin".into(),
             description: None,
             permissions: vec![

@@ -1,6 +1,7 @@
+use std::str::FromStr;
+
 use email_address::EmailAddress;
 use nutype::nutype;
-use std::str::FromStr;
 
 fn is_valid_email(s: &str) -> bool {
     EmailAddress::from_str(s).is_ok()

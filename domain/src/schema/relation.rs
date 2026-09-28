@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 
 use serde::{Deserialize, Serialize};
 
-use crate::value_objects::{AttributeId, DocumentTypeId, RelationId};
+use super::ids::{AttributeId, DocumentTypeId, RelationId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum OwnerRelationKind {

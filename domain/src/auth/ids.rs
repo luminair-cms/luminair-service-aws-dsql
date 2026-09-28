@@ -1,4 +1,5 @@
 use nutype::nutype;
+use uuid::Uuid;
 
 #[nutype(
     sanitize(trim),
@@ -18,6 +19,54 @@ use nutype::nutype;
     )
 )]
 pub struct UserId(String);
+
+#[nutype(derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Display,
+    Serialize,
+    Deserialize,
+    AsRef,
+    Deref,
+    Into
+))]
+pub struct RoleId(Uuid);
+
+#[nutype(derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Display,
+    Serialize,
+    Deserialize,
+    AsRef,
+    Deref,
+    Into
+))]
+pub struct UserRoleAssignmentId(Uuid);
+
+#[nutype(derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Display,
+    Serialize,
+    Deserialize,
+    AsRef,
+    Deref,
+    Into
+))]
+pub struct AccessRequestId(Uuid);
 
 #[cfg(test)]
 mod tests {

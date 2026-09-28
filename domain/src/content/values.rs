@@ -1,27 +1,43 @@
 use std::collections::HashMap;
 
+use chrono::{DateTime, NaiveDate, Utc};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-use super::field_type::FieldType;
-use super::primitive_value::PrimitiveValue;
-use crate::value_objects::{Email, LocaleId, Url};
+use crate::common::{Email, Url};
+use crate::schema::types::{FieldType, IntegerSize, PrimitiveType};
+use crate::system::ids::LocaleId;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ContentValue {
-    Scalar(DomainValue),
-    LocalizedText(HashMap<LocaleId, String>),
-    Null,
+pub enum PrimitiveValue {
+    Text(String),
+    Uid(String),
+    Uuid(Uuid),
+    Integer(i64),
+    Decimal(Decimal),
+    Date(NaiveDate),
+    DateTime(DateTime<Utc>),
+    Boolean(bool),
 }
 
-impl From<DomainValue> for ContentValue {
-    fn from(v: DomainValue) -> Self {
-        ContentValue::Scalar(v)
-    }
-}
-
-impl From<PrimitiveValue> for ContentValue {
-    fn from(p: PrimitiveValue) -> Self {
-        ContentValue::Scalar(DomainValue::Primitive(p))
+impl PrimitiveValue {
+    pub fn matches_primitive_type(&self, pt: &PrimitiveType) -> bool {
+        match (self, pt) {
+            (PrimitiveValue::Text(_), PrimitiveType::Text) => true,
+            (PrimitiveValue::Uid(_), PrimitiveType::Uid) => true,
+            (PrimitiveValue::Uuid(_), PrimitiveType::Uuid) => true,
+            (PrimitiveValue::Integer(val), PrimitiveType::Integer(size)) => match size {
+                IntegerSize::I16 => *val >= i16::MIN as i64 && *val <= i16::MAX as i64,
+                IntegerSize::I32 => *val >= i32::MIN as i64 && *val <= i32::MAX as i64,
+                IntegerSize::I64 => true,
+            },
+            (PrimitiveValue::Decimal(_), PrimitiveType::Decimal { .. }) => true,
+            (PrimitiveValue::Date(_), PrimitiveType::Date) => true,
+            (PrimitiveValue::DateTime(_), PrimitiveType::DateTime) => true,
+            (PrimitiveValue::Boolean(_), PrimitiveType::Boolean) => true,
+            _ => false,
+        }
     }
 }
 
@@ -63,13 +79,28 @@ impl DomainValue {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ContentValue {
+    Scalar(DomainValue),
+    LocalizedText(HashMap<LocaleId, String>),
+    Null,
+}
+
+impl From<DomainValue> for ContentValue {
+    fn from(v: DomainValue) -> Self {
+        ContentValue::Scalar(v)
+    }
+}
+
+impl From<PrimitiveValue> for ContentValue {
+    fn from(p: PrimitiveValue) -> Self {
+        ContentValue::Scalar(DomainValue::Primitive(p))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::field_type::{IntegerSize, PrimitiveType};
-    use chrono::Utc;
-    use rust_decimal::Decimal;
-    use uuid::Uuid;
 
     #[test]
     fn test_matches_field_type_text_ok() {

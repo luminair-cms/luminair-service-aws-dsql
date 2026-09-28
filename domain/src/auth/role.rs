@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::value_objects::{DocumentTypeId, RoleId, UserId, UserRoleAssignmentId};
+use crate::auth::ids::{RoleId, UserId, UserRoleAssignmentId};
+use crate::schema::ids::DocumentTypeId;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Permission {

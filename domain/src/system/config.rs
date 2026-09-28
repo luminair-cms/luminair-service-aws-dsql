@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use super::ids::{LocaleId, SystemConfigId};
 use crate::errors::DomainError;
-use crate::value_objects::{LocaleId, SystemConfigId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SystemConfig {

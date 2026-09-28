@@ -5,7 +5,7 @@ use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
 
 use super::field_definition::FieldDefinition;
-use crate::value_objects::{AttributeId, DocumentTypeId};
+use super::ids::{AttributeId, DocumentTypeId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DocumentKind {
@@ -81,7 +81,7 @@ impl Borrow<str> for DocumentType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::field_type::{FieldType, PrimitiveType};
+    use crate::schema::types::{FieldType, PrimitiveType};
 
     #[test]
     fn test_document_type_field_lookups() {

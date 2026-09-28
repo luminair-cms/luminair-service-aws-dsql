@@ -1,5 +1,4 @@
 use nutype::nutype;
-use uuid::Uuid;
 
 #[nutype(
     sanitize(trim),
@@ -24,22 +23,6 @@ use uuid::Uuid;
     )
 )]
 pub struct DocumentTypeId(String);
-
-#[nutype(derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Display,
-    Serialize,
-    Deserialize,
-    AsRef,
-    Deref,
-    Into
-))]
-pub struct DocumentInstanceId(Uuid);
 
 #[nutype(
     sanitize(trim),
@@ -98,86 +81,6 @@ impl RelationId {
             .expect("derived relation id from valid kebab-case identifiers is valid kebab-case")
     }
 }
-
-#[nutype(derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Display,
-    Serialize,
-    Deserialize,
-    AsRef,
-    Deref,
-    Into
-))]
-pub struct SnapshotId(Uuid);
-
-#[nutype(derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Display,
-    Serialize,
-    Deserialize,
-    AsRef,
-    Deref,
-    Into
-))]
-pub struct RoleId(Uuid);
-
-#[nutype(derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Display,
-    Serialize,
-    Deserialize,
-    AsRef,
-    Deref,
-    Into
-))]
-pub struct UserRoleAssignmentId(Uuid);
-
-#[nutype(derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Display,
-    Serialize,
-    Deserialize,
-    AsRef,
-    Deref,
-    Into
-))]
-pub struct AccessRequestId(Uuid);
-
-#[nutype(derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Display,
-    Serialize,
-    Deserialize,
-    AsRef,
-    Deref,
-    Into
-))]
-pub struct SystemConfigId(Uuid);
 
 #[cfg(test)]
 mod tests {

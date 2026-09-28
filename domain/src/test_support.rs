@@ -2,15 +2,13 @@ use chrono::{DateTime, Utc};
 use indexmap::IndexSet;
 use uuid::Uuid;
 
-use crate::entities::document_instance::DocumentInstance;
-use crate::entities::document_type::{
-    DocumentKind, DocumentType, DocumentTypeInfo, DocumentTypeOptions,
+use crate::auth::UserId;
+use crate::content::{DocumentInstance, DocumentInstanceId};
+use crate::schema::{
+    AttributeId, DocumentKind, DocumentType, DocumentTypeId, DocumentTypeInfo, DocumentTypeOptions,
+    FieldDefinition, FieldType, PrimitiveType, Relation, SchemaRegistry,
 };
-use crate::entities::field_definition::FieldDefinition;
-use crate::entities::relation::Relation;
-use crate::services::schema_registry::SchemaRegistry;
-use crate::types::field_type::{FieldType, PrimitiveType};
-use crate::value_objects::{AttributeId, DocumentInstanceId, DocumentTypeId, LocaleId, UserId};
+use crate::system::LocaleId;
 
 pub fn document_type_id() -> DocumentTypeId {
     DocumentTypeId::try_new("test-article").expect("valid test type id")

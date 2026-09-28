@@ -2,9 +2,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::ids::{AccessRequestId, RoleId, UserId, UserRoleAssignmentId};
 use super::role::UserRoleAssignment;
 use crate::errors::DomainError;
-use crate::value_objects::{AccessRequestId, RoleId, UserId, UserRoleAssignmentId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AccessRequestStatus {

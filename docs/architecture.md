@@ -17,9 +17,15 @@ luminair-service-aws-dsql/
 
 ### `domain`
 
-- **Contains**: entities, value objects, aggregates, domain events, repository *traits* (ports), domain errors
+- **Contains**: entities, value objects, aggregates, domain events, repository *traits* (ports), domain errors, structured into 5 DDD subdomains:
+  - `auth`: Identity & Access Management (`UserId`, `RoleId`, `Role`, `UserRoleAssignment`, `AccessRequest`, `AuthorizationService`, repository ports)
+  - `schema`: Schema Metadata & Type System (`DocumentTypeId`, `AttributeId`, `RelationId`, `DocumentType`, `FieldDefinition`, `Relation`, `SchemaRegistry`, `FieldType`)
+  - `content`: Content Lifecycle & Storage (`DocumentInstanceId`, `SnapshotId`, `DocumentInstance`, `PublicationState`, `PublishedSnapshot`, `ContentValue`, `DomainValue`, `PrimitiveValue`, repository ports)
+  - `system`: System Configuration & Localization (`LocaleId`, `SystemConfigId`, `SystemConfig`, repository port)
+  - `common`: Ubiquitous Value Objects (`Email`, `Url`)
 - **Must NOT depend on**: `application`, `infrastructure`, any I/O crate (tokio, sqlx, axum …)
 - **Allowed deps**: `serde` (for serialisation traits only), `thiserror`, `uuid`, `chrono`, `nutype` (for domain value objects), `email_address` and `url` (for validation predicates), `indexmap` (for preserving declared attribute order), `rust_decimal` (for exact decimal representation)
+
 
 ### `application`
 

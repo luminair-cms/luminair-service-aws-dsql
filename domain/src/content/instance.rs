@@ -4,9 +4,11 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::ids::{DocumentInstanceId, SnapshotId};
+use super::values::ContentValue;
+use crate::auth::ids::UserId;
 use crate::errors::DomainError;
-use crate::types::content_value::ContentValue;
-use crate::value_objects::{AttributeId, DocumentInstanceId, DocumentTypeId, SnapshotId, UserId};
+use crate::schema::ids::{AttributeId, DocumentTypeId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PublicationState {

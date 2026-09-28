@@ -1,8 +1,11 @@
+use std::borrow::Borrow;
+use std::hash::{Hash, Hasher};
+
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use crate::types::field_type::{FieldType, PrimitiveType};
-use crate::value_objects::AttributeId;
+use super::ids::AttributeId;
+use super::types::{FieldType, PrimitiveType};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FieldConstraint {
@@ -37,9 +40,6 @@ impl FieldConstraint {
         }
     }
 }
-
-use std::borrow::Borrow;
-use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldDefinition {
@@ -79,7 +79,7 @@ impl Borrow<str> for FieldDefinition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::field_type::IntegerSize;
+    use crate::schema::types::IntegerSize;
 
     #[test]
     fn test_constraint_applicable_pattern_on_text() {

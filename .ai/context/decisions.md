@@ -278,10 +278,29 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
   - Provided transparent backward-compatible module aliases in `types/mod.rs`, `entities/mod.rs`, and `entities/auth/mod.rs` (`content_value`, `user_role_assignment`, `published_snapshot`) ensuring zero churn for existing workspace imports.
   - Deleted obsolete 10–19 line micro-files.
 
+## 2026-09-28 — Domain Crate Restructuring (Steps 3, 4, 5: Subdomain Layout)
+
+- **Subdomain Organization**:
+  - Reorganized `domain` from technical-type folders (`entities`, `ports`, `services`, `types`, `value_objects`) into 5 domain aggregates / subdomains:
+    - `auth`: `ids` (`UserId`, `RoleId`, `UserRoleAssignmentId`, `AccessRequestId`), `role` (`Role`, `Permission`, `UserRoleAssignment`), `access_request` (`AccessRequest`, `AccessRequestStatus`), `ports` (repository traits), `service` (`AuthorizationService`).
+    - `schema`: `ids` (`DocumentTypeId`, `AttributeId`, `RelationId`), `types` (`FieldType`, `PrimitiveType`, `IntegerSize`), `field_definition` (`FieldDefinition`, `FieldConstraint`), `relation` (`Relation`, `RelationInverse`, `OwnerRelationKind`, `InverseRelationKind`, `RelationView`), `document_type` (`DocumentType`, `DocumentKind`, `DocumentTypeInfo`, `DocumentTypeOptions`), `registry` (`SchemaRegistry`).
+    - `content`: `ids` (`DocumentInstanceId`, `SnapshotId`), `values` (`PrimitiveValue`, `DomainValue`, `ContentValue`), `instance` (`DocumentInstance`, `PublicationState`, `PublishedSnapshot`, `AuditTrail`, `ResolvedRelation`, `DocumentContent`), `ports` (repository traits).
+    - `system`: `ids` (`LocaleId`, `SystemConfigId`), `config` (`SystemConfig`), `ports` (`SystemConfigRepository`).
+    - `common`: `email` (`Email`), `url` (`Url`).
+- **Clean Backward-Compatible Module Shims**:
+  - In `domain/src/lib.rs`, exposed `entities`, `ports`, `services`, `types`, and `value_objects` modules as `#[doc(hidden)]` shims that re-export subdomain types and legacy module hierarchies (`domain::entities::auth::access_request::*`, `domain::ports::document_instance_repository::*`, etc.).
+  - Re-exported all domain items at `domain::*` cleanly without ambiguous glob overlaps.
+  - Required zero code churn in `application` and `infrastructure`.
+- **Full Verification**:
+  - 100% of workspace tests pass (`cargo test --workspace`).
+  - Zero warnings on `cargo clippy --workspace --all-targets -- -D warnings`.
+  - Clean formatting via `cargo fmt --check`.
+
 ---
 
 > **AI agents**: when you make a non-obvious decision during implementation, append an entry here.
 > Format: `## YYYY-MM-DD — Topic` followed by bullet points.
+
 
 
 

@@ -1,5 +1,6 @@
-use nutype::nutype;
 use std::str::FromStr;
+
+use nutype::nutype;
 use url::Url as ExternalUrl;
 
 fn is_valid_url(s: &str) -> bool {

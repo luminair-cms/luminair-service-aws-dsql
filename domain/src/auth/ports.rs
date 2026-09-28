@@ -1,10 +1,9 @@
 use std::future::Future;
 
-use crate::entities::auth::access_request::AccessRequest;
-use crate::entities::auth::role::Role;
-use crate::entities::auth::user_role_assignment::UserRoleAssignment;
+use super::access_request::AccessRequest;
+use super::ids::{AccessRequestId, RoleId, UserId, UserRoleAssignmentId};
+use super::role::{Role, UserRoleAssignment};
 use crate::errors::DomainError;
-use crate::value_objects::{AccessRequestId, RoleId, UserId, UserRoleAssignmentId};
 
 pub trait RoleRepository: Send + Sync {
     fn find_by_id(

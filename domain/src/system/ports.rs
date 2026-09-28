@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use crate::entities::system_config::SystemConfig;
+use super::config::SystemConfig;
 use crate::errors::DomainError;
 
 pub trait SystemConfigRepository: Send + Sync {
