@@ -8,10 +8,10 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use axum_test::TestServer;
 use chrono::Utc;
-use domain::entities::auth::access_request::AccessRequest;
-use domain::entities::auth::user_role_assignment::UserRoleAssignment;
-use domain::ports::{AccessRequestRepository, UserRoleAssignmentRepository};
-use domain::value_objects::{RoleId, UserId, UserRoleAssignmentId};
+use domain::auth::{
+    AccessRequest, AccessRequestRepository, RoleId, UserId, UserRoleAssignment,
+    UserRoleAssignmentId, UserRoleAssignmentRepository,
+};
 use infrastructure::auth::{
     AuthAppState, AuthConfig, AuthUser, AuthenticatedClaims, Claims, MockTokenValidator,
     SecretTokenValidator, SqlxShadowUserRepository, TokenValidator, run_bootstrap,

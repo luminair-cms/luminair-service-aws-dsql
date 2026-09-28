@@ -1,6 +1,6 @@
 //! Token claims extracted from validated JWTs.
 
-use domain::value_objects::UserId;
+use domain::auth::UserId;
 use serde::{Deserialize, Serialize};
 
 use super::errors::AuthError;

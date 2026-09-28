@@ -8,10 +8,10 @@
 //! - Universal link tables (`{owner}__{attr}_link`) for all relations (`HasOne` and `HasMany`) with native foreign keys
 //! - Generates indexes for unique attributes, HasOne owner uniqueness, and link targets
 
-use domain::entities::document_type::{DocumentKind, DocumentType};
-use domain::entities::relation::{OwnerRelationKind, RelationView};
-use domain::services::schema_registry::SchemaRegistry;
-use domain::types::field_type::{FieldType, IntegerSize, PrimitiveType};
+use domain::schema::{
+    DocumentKind, DocumentType, FieldType, IntegerSize, OwnerRelationKind, PrimitiveType,
+    RelationView, SchemaRegistry,
+};
 
 use super::model::{
     ColumnDefinition, DatabaseSchema, ForeignKeyAction, ForeignKeyDefinition, IndexDefinition,
@@ -506,10 +506,10 @@ pub fn map_field_type_to_sql(ft: &FieldType) -> SqlColumnType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use domain::entities::document_type::{DocumentTypeInfo, DocumentTypeOptions};
-    use domain::entities::field_definition::FieldDefinition;
-    use domain::entities::relation::Relation;
-    use domain::value_objects::{AttributeId, DocumentTypeId, RelationId};
+    use domain::schema::{
+        AttributeId, DocumentTypeId, DocumentTypeInfo, DocumentTypeOptions, FieldDefinition,
+        Relation, RelationId,
+    };
     use indexmap::IndexSet;
 
     #[test]

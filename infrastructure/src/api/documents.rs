@@ -10,9 +10,8 @@ use application::services::documents::DocumentsService;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use domain::entities::document_type::{DocumentKind, DocumentType};
-use domain::ports::document_instance_repository::{FieldFilter, Pagination};
-use domain::value_objects::{AttributeId, DocumentInstanceId, DocumentTypeId};
+use domain::content::{DocumentInstanceId, FieldFilter, Pagination};
+use domain::schema::{AttributeId, DocumentKind, DocumentType, DocumentTypeId};
 use uuid::Uuid;
 
 use super::dto::{

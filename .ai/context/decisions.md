@@ -296,10 +296,22 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
   - Zero warnings on `cargo clippy --workspace --all-targets -- -D warnings`.
   - Clean formatting via `cargo fmt --check`.
 
+## 2026-09-28 — Direct Subdomain Imports & Elimination of Backward-Compatible Shims
+
+- **Complete Elimination of Legacy Shims**:
+  - Migrated all imports across `application` (commands, context, errors, services, fakes, tests) and `infrastructure` (API handlers, DTOs, state, auth extractors/bootstrap, SQLx repositories, dynamic schema loader, tests) to the 5 canonical subdomains (`domain::auth::*`, `domain::schema::*`, `domain::content::*`, `domain::system::*`, `domain::common::*`, `domain::errors::*`).
+  - Removed all 160 lines of backward-compatible shims (`domain::entities`, `domain::ports`, `domain::services`, `domain::types`, `domain::value_objects`) from `domain/src/lib.rs`.
+  - `domain/src/lib.rs` is now reduced to a concise 18-line manifest exposing solely the 5 DDD subdomains and top-level `DomainError`.
+- **Zero Ambiguity & Full Verification**:
+  - 100% of workspace tests pass (`cargo test --workspace`).
+  - Zero warnings on `cargo clippy --workspace --all-targets -- -D warnings`.
+  - Clean formatting via `cargo fmt --check`.
+
 ---
 
 > **AI agents**: when you make a non-obvious decision during implementation, append an entry here.
 > Format: `## YYYY-MM-DD — Topic` followed by bullet points.
+
 
 
 

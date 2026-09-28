@@ -16,8 +16,8 @@ pub mod model;
 pub mod naming;
 pub mod planner;
 
-use domain::entities::system_config::SystemConfig;
-use domain::services::schema_registry::SchemaRegistry;
+use domain::schema::SchemaRegistry;
+use domain::system::SystemConfig;
 use sqlx::PgPool;
 use std::path::Path;
 use thiserror::Error;

@@ -1,8 +1,7 @@
 //! Application-level error types.
 
-use domain::entities::role::Permission;
+use domain::auth::{Permission, UserId};
 use domain::errors::DomainError;
-use domain::value_objects::UserId;
 use thiserror::Error;
 
 /// Errors that can occur within the application layer use cases.
@@ -47,8 +46,7 @@ pub enum ApplicationError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use domain::value_objects::DocumentInstanceId;
-    use domain::value_objects::UserId;
+    use domain::content::DocumentInstanceId;
 
     #[test]
     fn test_domain_error_conversion() {

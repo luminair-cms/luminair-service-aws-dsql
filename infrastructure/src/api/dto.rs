@@ -3,15 +3,14 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
-use domain::entities::auth::access_request::{AccessRequest, AccessRequestStatus};
-use domain::entities::document_instance::{DocumentInstance, PublicationState};
-use domain::entities::document_type::DocumentType;
-use domain::entities::published_snapshot::PublishedSnapshot;
-use domain::types::content_value::ContentValue;
-use domain::types::domain_value::DomainValue;
-use domain::types::field_type::{FieldType, PrimitiveType};
-use domain::types::primitive_value::PrimitiveValue;
-use domain::value_objects::{AttributeId, Email, LocaleId, Url};
+use domain::auth::{AccessRequest, AccessRequestStatus};
+use domain::common::{Email, Url};
+use domain::content::{
+    ContentValue, DocumentInstance, DomainValue, PrimitiveValue, PublicationState,
+    PublishedSnapshot,
+};
+use domain::schema::{AttributeId, DocumentType, FieldType, PrimitiveType};
+use domain::system::LocaleId;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::json;

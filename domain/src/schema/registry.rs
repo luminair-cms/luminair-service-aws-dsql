@@ -283,10 +283,11 @@ mod tests {
     use indexmap::IndexSet;
     use uuid::Uuid;
 
+    use crate::common::{Email, Url};
     use crate::content::instance::PublicationState;
     use crate::content::values::{DomainValue, PrimitiveValue};
     use crate::schema::document_type::{DocumentKind, DocumentTypeInfo, DocumentTypeOptions};
-    use crate::schema::field_definition::FieldDefinition;
+    use crate::schema::field_definition::{FieldConstraint, FieldDefinition};
     use crate::schema::relation::{OwnerRelationKind, RelationInverse};
     use crate::schema::types::PrimitiveType;
     use crate::system::ids::{LocaleId, SystemConfigId};
@@ -501,9 +502,6 @@ mod tests {
 
     #[test]
     fn test_validate_content_field_constraint_min_length_violated() {
-        use crate::entities::field_definition::FieldConstraint;
-        use crate::types::field_type::PrimitiveType;
-
         let type_id = DocumentTypeId::try_new("slugged").unwrap();
         let slug_attr = AttributeId::try_new("slug").unwrap();
         let mut fields_def = IndexSet::new();
@@ -516,14 +514,14 @@ mod tests {
         });
         let doc_type = DocumentType {
             id: type_id.clone(),
-            kind: crate::entities::document_type::DocumentKind::Collection,
-            info: crate::entities::document_type::DocumentTypeInfo {
+            kind: DocumentKind::Collection,
+            info: DocumentTypeInfo {
                 title: "Slugged".into(),
                 singular_name: "slugged".into(),
                 plural_name: "sluggeds".into(),
                 description: None,
             },
-            options: crate::entities::document_type::DocumentTypeOptions {
+            options: DocumentTypeOptions {
                 draft_and_publish: true,
             },
             fields: fields_def,
@@ -554,9 +552,6 @@ mod tests {
 
     #[test]
     fn test_validate_content_field_constraint_pattern_violated() {
-        use crate::entities::field_definition::FieldConstraint;
-        use crate::types::field_type::PrimitiveType;
-
         let type_id = DocumentTypeId::try_new("slugged").unwrap();
         let slug_attr = AttributeId::try_new("slug").unwrap();
         let mut fields_def = IndexSet::new();
@@ -569,14 +564,14 @@ mod tests {
         });
         let doc_type = DocumentType {
             id: type_id.clone(),
-            kind: crate::entities::document_type::DocumentKind::Collection,
-            info: crate::entities::document_type::DocumentTypeInfo {
+            kind: DocumentKind::Collection,
+            info: DocumentTypeInfo {
                 title: "Slugged".into(),
                 singular_name: "slugged".into(),
                 plural_name: "sluggeds".into(),
                 description: None,
             },
-            options: crate::entities::document_type::DocumentTypeOptions {
+            options: DocumentTypeOptions {
                 draft_and_publish: true,
             },
             fields: fields_def,
@@ -643,8 +638,6 @@ mod tests {
 
     #[test]
     fn test_validate_content_email_and_url_self_validation() {
-        use crate::value_objects::{Email, Url};
-
         let type_id = DocumentTypeId::try_new("contact").unwrap();
         let email_attr = AttributeId::try_new("email").unwrap();
         let website_attr = AttributeId::try_new("website").unwrap();
@@ -665,14 +658,14 @@ mod tests {
         });
         let doc_type = DocumentType {
             id: type_id.clone(),
-            kind: crate::entities::document_type::DocumentKind::Collection,
-            info: crate::entities::document_type::DocumentTypeInfo {
+            kind: DocumentKind::Collection,
+            info: DocumentTypeInfo {
                 title: "Contact".into(),
                 singular_name: "contact".into(),
                 plural_name: "contacts".into(),
                 description: None,
             },
-            options: crate::entities::document_type::DocumentTypeOptions {
+            options: DocumentTypeOptions {
                 draft_and_publish: false,
             },
             fields: fields_def,
@@ -752,14 +745,14 @@ mod tests {
         });
         let doc_type = DocumentType {
             id: type_id.clone(),
-            kind: crate::entities::document_type::DocumentKind::Collection,
-            info: crate::entities::document_type::DocumentTypeInfo {
+            kind: DocumentKind::Collection,
+            info: DocumentTypeInfo {
                 title: "Post".into(),
                 singular_name: "post".into(),
                 plural_name: "posts".into(),
                 description: None,
             },
-            options: crate::entities::document_type::DocumentTypeOptions {
+            options: DocumentTypeOptions {
                 draft_and_publish: false,
             },
             fields: fields_def,

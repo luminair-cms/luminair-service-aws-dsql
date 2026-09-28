@@ -1,10 +1,10 @@
 //! Startup bootstrap hook for seeding the initial administrator (ADR-005).
 
 use chrono::Utc;
-use domain::entities::auth::access_request::{AccessRequest, AccessRequestStatus};
-use domain::entities::auth::user_role_assignment::UserRoleAssignment;
-use domain::ports::{AccessRequestRepository, UserRoleAssignmentRepository};
-use domain::value_objects::{AccessRequestId, RoleId, UserId, UserRoleAssignmentId};
+use domain::auth::{
+    AccessRequest, AccessRequestId, AccessRequestRepository, AccessRequestStatus, RoleId, UserId,
+    UserRoleAssignment, UserRoleAssignmentId, UserRoleAssignmentRepository,
+};
 use sqlx::PgPool;
 use uuid::Uuid;
 

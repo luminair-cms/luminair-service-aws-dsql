@@ -1,6 +1,6 @@
 //! Commands for user access request operations.
 
-use domain::value_objects::{AccessRequestId, RoleId, UserId};
+use domain::auth::{AccessRequestId, RoleId, UserId};
 
 /// Command to submit a new access request.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,8 +1,9 @@
 use thiserror::Error;
 
-use crate::value_objects::{
-    AccessRequestId, AttributeId, DocumentInstanceId, DocumentTypeId, LocaleId, UserId,
-};
+use crate::auth::{AccessRequestId, UserId};
+use crate::content::DocumentInstanceId;
+use crate::schema::{AttributeId, DocumentTypeId};
+use crate::system::LocaleId;
 
 #[derive(Debug, Error)]
 pub enum DomainError {

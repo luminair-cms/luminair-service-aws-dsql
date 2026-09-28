@@ -6,8 +6,8 @@ use application::services::access_requests::AccessRequestsServiceImpl;
 use application::services::documents::DocumentsServiceImpl;
 use application::services::system_config::SystemConfigServiceImpl;
 use axum::extract::FromRef;
-use domain::entities::system_config::SystemConfig;
-use domain::services::schema_registry::SchemaRegistry;
+use domain::schema::SchemaRegistry;
+use domain::system::SystemConfig;
 use sqlx::PgPool;
 
 use crate::auth::AuthAppState;

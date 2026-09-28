@@ -4,23 +4,16 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::Utc;
-use domain::entities::document_instance::{DocumentInstance, PublicationState};
-use domain::entities::document_type::{
-    DocumentKind, DocumentType, DocumentTypeInfo, DocumentTypeOptions,
+use domain::auth::{Permission, Role, RoleId, UserId};
+use domain::content::{
+    ContentValue, DocumentInstance, DomainValue, Pagination, PrimitiveValue, PublicationState,
 };
-use domain::entities::field_definition::FieldDefinition;
-use domain::entities::role::{Permission, Role};
-use domain::entities::system_config::SystemConfig;
 use domain::errors::DomainError;
-use domain::ports::document_instance_repository::Pagination;
-use domain::services::schema_registry::SchemaRegistry;
-use domain::types::content_value::ContentValue;
-use domain::types::domain_value::DomainValue;
-use domain::types::field_type::{FieldType, PrimitiveType};
-use domain::types::primitive_value::PrimitiveValue;
-use domain::value_objects::{
-    AttributeId, DocumentTypeId, LocaleId, RoleId, SystemConfigId, UserId,
+use domain::schema::{
+    AttributeId, DocumentKind, DocumentType, DocumentTypeId, DocumentTypeInfo, DocumentTypeOptions,
+    FieldDefinition, FieldType, PrimitiveType, SchemaRegistry,
 };
+use domain::system::{LocaleId, SystemConfig, SystemConfigId};
 use indexmap::IndexSet;
 use uuid::Uuid;
 

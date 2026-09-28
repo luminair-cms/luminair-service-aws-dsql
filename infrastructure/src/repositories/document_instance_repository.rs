@@ -5,22 +5,19 @@ use std::future::Future;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use domain::entities::document_instance::{
-    AuditTrail, DocumentContent, DocumentInstance, PublicationState, ResolvedRelation,
+use domain::auth::UserId;
+use domain::common::{Email, Url};
+use domain::content::{
+    AuditTrail, ContentValue, DocumentContent, DocumentInstance, DocumentInstanceId,
+    DocumentInstanceRepository, DomainValue, FieldFilter, Page, Pagination, PrimitiveValue,
+    PublicationState, RelationMap, ResolvedRelation,
 };
-use domain::entities::document_type::DocumentKind;
-use domain::entities::relation::RelationView;
 use domain::errors::DomainError;
-use domain::ports::DocumentInstanceRepository;
-use domain::ports::document_instance_repository::{FieldFilter, Page, Pagination, RelationMap};
-use domain::services::schema_registry::SchemaRegistry;
-use domain::types::content_value::ContentValue;
-use domain::types::domain_value::DomainValue;
-use domain::types::field_type::{FieldType, IntegerSize, PrimitiveType};
-use domain::types::primitive_value::PrimitiveValue;
-use domain::value_objects::{
-    AttributeId, DocumentInstanceId, DocumentTypeId, Email, LocaleId, Url, UserId,
+use domain::schema::{
+    AttributeId, DocumentKind, DocumentTypeId, FieldType, IntegerSize, PrimitiveType, RelationView,
+    SchemaRegistry,
 };
+use domain::system::LocaleId;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 

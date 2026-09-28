@@ -1,9 +1,7 @@
 //! Security and caller identity context.
 
-use domain::entities::document_instance::DocumentInstance;
-use domain::entities::role::{Permission, Role};
-use domain::services::authorization::AuthorizationService;
-use domain::value_objects::{RoleId, UserId};
+use domain::auth::{AuthorizationService, Permission, Role, RoleId, UserId};
+use domain::content::DocumentInstance;
 
 use crate::errors::ApplicationError;
 
@@ -79,7 +77,7 @@ impl CallerContext {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use domain::value_objects::DocumentTypeId;
+    use domain::schema::DocumentTypeId;
     use uuid::Uuid;
 
     fn make_test_instance(owner: &UserId) -> (DocumentTypeId, DocumentInstance) {

@@ -3,21 +3,16 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-use domain::entities::access_request::AccessRequest;
-use domain::entities::document_instance::DocumentInstance;
-use domain::entities::published_snapshot::PublishedSnapshot;
-use domain::entities::role::Role;
-use domain::entities::user_role_assignment::UserRoleAssignment;
+use domain::auth::{
+    AccessRequest, AccessRequestId, AccessRequestRepository, AccessRequestStatus, Role, RoleId,
+    RoleRepository, UserId, UserRoleAssignment, UserRoleAssignmentId, UserRoleAssignmentRepository,
+};
+use domain::content::{
+    DocumentInstance, DocumentInstanceId, DocumentInstanceRepository, FieldFilter, Page,
+    Pagination, PublishedSnapshot, RelationMap, SnapshotRepository,
+};
 use domain::errors::DomainError;
-use domain::ports::document_instance_repository::{FieldFilter, Page, Pagination, RelationMap};
-use domain::ports::{
-    AccessRequestRepository, DocumentInstanceRepository, RoleRepository, SnapshotRepository,
-    UserRoleAssignmentRepository,
-};
-use domain::value_objects::{
-    AccessRequestId, AttributeId, DocumentInstanceId, DocumentTypeId, RoleId, UserId,
-    UserRoleAssignmentId,
-};
+use domain::schema::{AttributeId, DocumentTypeId};
 
 /// Thread-safe in-memory fake for `DocumentInstanceRepository`.
 #[derive(Debug, Default)]
@@ -379,12 +374,7 @@ impl AccessRequestRepository for FakeAccessRequestRepository {
             .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
         Ok(store
             .values()
-            .filter(|r| {
-                matches!(
-                    r.status,
-                    domain::entities::access_request::AccessRequestStatus::Pending
-                )
-            })
+            .filter(|r| matches!(r.status, AccessRequestStatus::Pending))
             .cloned()
             .collect())
     }

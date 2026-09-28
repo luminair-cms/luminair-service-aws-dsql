@@ -4,12 +4,11 @@ use std::future::Future;
 use std::sync::Arc;
 
 use chrono::Utc;
-use domain::entities::access_request::AccessRequest;
-use domain::entities::role::Permission;
-use domain::entities::user_role_assignment::UserRoleAssignment;
+use domain::auth::{
+    AccessRequest, AccessRequestId, AccessRequestRepository, Permission, RoleRepository,
+    UserRoleAssignment, UserRoleAssignmentRepository,
+};
 use domain::errors::DomainError;
-use domain::ports::{AccessRequestRepository, RoleRepository, UserRoleAssignmentRepository};
-use domain::value_objects::AccessRequestId;
 
 use crate::commands::access_requests::*;
 use crate::context::CallerContext;
@@ -192,9 +191,7 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
-    use domain::entities::access_request::AccessRequestStatus;
-    use domain::entities::role::Role;
-    use domain::value_objects::{RoleId, UserId};
+    use domain::auth::{AccessRequestStatus, Role, RoleId, UserId};
     use uuid::Uuid;
 
     use crate::test_support::{

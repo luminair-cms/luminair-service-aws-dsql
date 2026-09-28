@@ -9,8 +9,7 @@
 //! - Indexes: `idx_{table}_{column}`, `uq_{link}_owner`, and `idx_{link}_target`
 //! - Foreign keys: `fk_{published}_id`, `fk_{link}_owner`, `fk_{link}_target`
 
-use domain::entities::document_type::{DocumentKind, DocumentType};
-use domain::value_objects::AttributeId;
+use domain::schema::{AttributeId, DocumentKind, DocumentType};
 
 /// List of reserved SQL and PostgreSQL keywords that cannot be used as unquoted table or column identifiers.
 const RESERVED_SQL_KEYWORDS: &[&str] = &[
@@ -208,8 +207,7 @@ pub fn link_target_fk_name(link_table: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use domain::entities::document_type::{DocumentTypeInfo, DocumentTypeOptions};
-    use domain::value_objects::DocumentTypeId;
+    use domain::schema::{DocumentTypeId, DocumentTypeInfo, DocumentTypeOptions};
     use indexmap::IndexSet;
 
     #[test]

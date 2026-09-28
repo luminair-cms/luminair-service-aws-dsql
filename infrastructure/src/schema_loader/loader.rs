@@ -13,15 +13,12 @@
 //! 5. Valid relation endpoints (owner and target types must exist)
 //! 6. Preserves declared attribute order via `IndexMap`
 
-use domain::entities::document_type::{
-    DocumentKind, DocumentType, DocumentTypeInfo, DocumentTypeOptions,
+use domain::schema::{
+    AttributeId, DocumentKind, DocumentType, DocumentTypeId, DocumentTypeInfo, DocumentTypeOptions,
+    FieldConstraint, FieldDefinition, FieldType, IntegerSize, OwnerRelationKind, PrimitiveType,
+    Relation, RelationId, RelationInverse, SchemaRegistry,
 };
-use domain::entities::field_definition::{FieldConstraint, FieldDefinition};
-use domain::entities::relation::{OwnerRelationKind, Relation, RelationInverse};
-use domain::entities::system_config::SystemConfig;
-use domain::services::schema_registry::SchemaRegistry;
-use domain::types::field_type::{FieldType, IntegerSize, PrimitiveType};
-use domain::value_objects::{AttributeId, DocumentTypeId, LocaleId, RelationId, SystemConfigId};
+use domain::system::{LocaleId, SystemConfig, SystemConfigId};
 use indexmap::{IndexMap, IndexSet};
 use rust_decimal::Decimal;
 use serde::Deserialize;

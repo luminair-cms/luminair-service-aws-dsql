@@ -2,7 +2,7 @@
 
 use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Response};
-use domain::value_objects::DocumentTypeId;
+use domain::schema::DocumentTypeId;
 
 use super::dto::{SingleResponse, document_type_to_json};
 use super::errors::ApiError;

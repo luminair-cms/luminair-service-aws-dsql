@@ -3,10 +3,9 @@
 use std::collections::HashMap;
 use std::future::Future;
 
-use domain::entities::auth::role::{Permission, Role};
+use domain::auth::{Permission, Role, RoleId, RoleRepository};
 use domain::errors::DomainError;
-use domain::ports::RoleRepository;
-use domain::value_objects::{DocumentTypeId, RoleId};
+use domain::schema::DocumentTypeId;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 

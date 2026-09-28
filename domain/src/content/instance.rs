@@ -163,8 +163,7 @@ impl DocumentInstance {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::domain_value::DomainValue;
-    use crate::types::primitive_value::PrimitiveValue;
+    use crate::content::values::{DomainValue, PrimitiveValue};
     use chrono::Duration;
 
     fn make_test_instance() -> (DocumentInstance, UserId, DateTime<Utc>) {

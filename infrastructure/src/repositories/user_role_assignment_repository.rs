@@ -3,10 +3,10 @@
 use std::future::Future;
 
 use chrono::{DateTime, Utc};
-use domain::entities::auth::user_role_assignment::UserRoleAssignment;
+use domain::auth::{
+    RoleId, UserId, UserRoleAssignment, UserRoleAssignmentId, UserRoleAssignmentRepository,
+};
 use domain::errors::DomainError;
-use domain::ports::UserRoleAssignmentRepository;
-use domain::value_objects::{RoleId, UserId, UserRoleAssignmentId};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 

@@ -5,15 +5,14 @@ use std::future::Future;
 use std::sync::Arc;
 
 use chrono::Utc;
-use domain::entities::document_instance::DocumentInstance;
-use domain::entities::document_type::DocumentKind;
-use domain::entities::published_snapshot::PublishedSnapshot;
-use domain::entities::role::Permission;
-use domain::entities::system_config::SystemConfig;
+use domain::auth::Permission;
+use domain::content::{
+    DocumentInstance, DocumentInstanceId, DocumentInstanceRepository, PublishedSnapshot,
+    SnapshotRepository,
+};
 use domain::errors::DomainError;
-use domain::ports::{DocumentInstanceRepository, SnapshotRepository};
-use domain::services::schema_registry::SchemaRegistry;
-use domain::value_objects::{AttributeId, DocumentInstanceId, DocumentTypeId};
+use domain::schema::{AttributeId, DocumentKind, DocumentTypeId, SchemaRegistry};
+use domain::system::SystemConfig;
 
 use crate::commands::documents::*;
 use crate::context::CallerContext;
@@ -462,15 +461,15 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
-    use domain::entities::document_instance::PublicationState;
-    use domain::entities::document_type::{DocumentType, DocumentTypeInfo, DocumentTypeOptions};
-    use domain::entities::field_definition::FieldDefinition;
-    use domain::ports::document_instance_repository::Pagination;
-    use domain::types::content_value::ContentValue;
-    use domain::types::domain_value::DomainValue;
-    use domain::types::field_type::{FieldType, PrimitiveType};
-    use domain::types::primitive_value::PrimitiveValue;
-    use domain::value_objects::{LocaleId, SystemConfigId, UserId};
+    use domain::auth::UserId;
+    use domain::content::{
+        ContentValue, DomainValue, Pagination, PrimitiveValue, PublicationState,
+    };
+    use domain::schema::{
+        DocumentType, DocumentTypeInfo, DocumentTypeOptions, FieldDefinition, FieldType,
+        PrimitiveType,
+    };
+    use domain::system::{LocaleId, SystemConfigId};
     use indexmap::IndexSet;
     use uuid::Uuid;
 
@@ -824,7 +823,7 @@ mod tests {
     async fn test_list_snapshots_unknown_instance_returns_not_found() {
         let (service, doc_type, caller, _) = make_test_fixture(DocumentKind::Collection);
 
-        let fake_id = domain::value_objects::DocumentInstanceId::new(Uuid::now_v7());
+        let fake_id = DocumentInstanceId::new(Uuid::now_v7());
         let result = service
             .list_snapshots(
                 &caller,
@@ -859,9 +858,6 @@ mod tests {
             constraints: vec![],
         });
 
-        use domain::entities::document_type::{
-            DocumentType, DocumentTypeInfo, DocumentTypeOptions,
-        };
         let doc_type = DocumentType {
             id: type_id,
             kind: DocumentKind::Collection,

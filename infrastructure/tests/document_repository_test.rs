@@ -14,15 +14,14 @@ use std::path::Path;
 use std::sync::Arc;
 
 use chrono::Utc;
-use domain::entities::document_instance::{
-    AuditTrail, DocumentContent, DocumentInstance, PublicationState, ResolvedRelation,
+use domain::auth::UserId;
+use domain::common::Email;
+use domain::content::{
+    AuditTrail, ContentValue, DocumentContent, DocumentInstance, DocumentInstanceId,
+    DocumentInstanceRepository, DomainValue, FieldFilter, Pagination, PrimitiveValue,
+    PublicationState, ResolvedRelation,
 };
-use domain::ports::DocumentInstanceRepository;
-use domain::ports::document_instance_repository::{FieldFilter, Pagination};
-use domain::types::content_value::ContentValue;
-use domain::types::domain_value::DomainValue;
-use domain::types::primitive_value::PrimitiveValue;
-use domain::value_objects::{AttributeId, DocumentInstanceId, DocumentTypeId, Email, UserId};
+use domain::schema::{AttributeId, DocumentTypeId};
 use infrastructure::migrations::run_migrations;
 use infrastructure::repositories::SqlxDocumentInstanceRepository;
 use infrastructure::schema_loader::{SafetyPolicy, load_schema_registry, sync_schemas};

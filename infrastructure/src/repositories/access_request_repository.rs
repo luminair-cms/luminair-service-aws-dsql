@@ -3,10 +3,10 @@
 use std::future::Future;
 
 use chrono::{DateTime, Utc};
-use domain::entities::auth::access_request::{AccessRequest, AccessRequestStatus};
+use domain::auth::{
+    AccessRequest, AccessRequestId, AccessRequestRepository, AccessRequestStatus, RoleId, UserId,
+};
 use domain::errors::DomainError;
-use domain::ports::AccessRequestRepository;
-use domain::value_objects::{AccessRequestId, RoleId, UserId};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 

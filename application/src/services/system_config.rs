@@ -2,8 +2,7 @@
 
 use std::sync::Arc;
 
-use domain::entities::system_config::SystemConfig;
-use domain::value_objects::LocaleId;
+use domain::system::{LocaleId, SystemConfig};
 
 /// Port trait defining operations for inspecting system configuration.
 pub trait SystemConfigService: Send + Sync + 'static {
@@ -48,7 +47,7 @@ impl SystemConfigService for SystemConfigServiceImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use domain::value_objects::SystemConfigId;
+    use domain::system::SystemConfigId;
     use uuid::Uuid;
 
     fn make_test_config() -> Arc<SystemConfig> {

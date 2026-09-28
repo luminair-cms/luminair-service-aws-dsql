@@ -4,11 +4,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use domain::entities::published_snapshot::PublishedSnapshot;
+use domain::auth::UserId;
+use domain::content::{DocumentInstanceId, PublishedSnapshot, SnapshotId, SnapshotRepository};
 use domain::errors::DomainError;
-use domain::ports::SnapshotRepository;
-use domain::services::schema_registry::SchemaRegistry;
-use domain::value_objects::{DocumentInstanceId, SnapshotId, UserId};
+use domain::schema::SchemaRegistry;
 use sqlx::{PgPool, Row};
 
 use super::document_instance_repository::read_content_value;

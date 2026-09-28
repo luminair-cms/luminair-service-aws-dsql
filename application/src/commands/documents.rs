@@ -2,9 +2,8 @@
 
 use std::collections::HashMap;
 
-use domain::ports::document_instance_repository::{FieldFilter, Pagination};
-use domain::types::content_value::ContentValue;
-use domain::value_objects::{AttributeId, DocumentInstanceId, DocumentTypeId};
+use domain::content::{ContentValue, DocumentInstanceId, FieldFilter, Pagination};
+use domain::schema::{AttributeId, DocumentTypeId};
 
 /// Query command to find documents matching criteria with pagination and optional relation enrichment.
 #[derive(Debug, Clone, PartialEq)]

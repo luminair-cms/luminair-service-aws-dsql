@@ -6,9 +6,10 @@ use application::context::CallerContext;
 use axum::extract::{FromRef, FromRequestParts};
 use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
-use domain::entities::auth::access_request::AccessRequestStatus;
-use domain::entities::auth::role::Role;
-use domain::ports::{AccessRequestRepository, RoleRepository, UserRoleAssignmentRepository};
+use domain::auth::{
+    AccessRequestRepository, AccessRequestStatus, Role, RoleRepository,
+    UserRoleAssignmentRepository,
+};
 use sqlx::PgPool;
 
 use super::claims::Claims;

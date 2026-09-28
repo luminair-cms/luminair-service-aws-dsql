@@ -4,11 +4,11 @@
 //! - `SqlxAccessRequestRepository`
 
 use chrono::Utc;
-use domain::entities::auth::access_request::AccessRequest;
-use domain::entities::auth::role::{Permission, Role};
-use domain::entities::auth::user_role_assignment::UserRoleAssignment;
-use domain::ports::{AccessRequestRepository, RoleRepository, UserRoleAssignmentRepository};
-use domain::value_objects::{DocumentTypeId, RoleId, UserId, UserRoleAssignmentId};
+use domain::auth::{
+    AccessRequest, AccessRequestRepository, AccessRequestStatus, Permission, Role, RoleId,
+    RoleRepository, UserId, UserRoleAssignment, UserRoleAssignmentId, UserRoleAssignmentRepository,
+};
+use domain::schema::DocumentTypeId;
 use infrastructure::migrations::{ROLE_ADMIN_ID, ROLE_EDITOR_ID, run_migrations};
 use infrastructure::repositories::{
     SqlxAccessRequestRepository, SqlxRoleRepository, SqlxUserRoleAssignmentRepository,
@@ -211,10 +211,7 @@ async fn test_access_request_repository_crud() {
         .expect("request exists");
     assert_eq!(by_id.user_id, user_id);
     assert_eq!(by_id.email, Some("test@example.com".into()));
-    assert!(matches!(
-        by_id.status,
-        domain::entities::auth::access_request::AccessRequestStatus::Pending
-    ));
+    assert!(matches!(by_id.status, AccessRequestStatus::Pending));
 
     let by_user = repo
         .find_by_user(&user_id)
@@ -236,10 +233,8 @@ async fn test_access_request_repository_crud() {
     repo.save(&request).await.unwrap();
 
     let approved = repo.find_by_id(request.id).await.unwrap().unwrap();
-    assert!(matches!(
-        approved.status,
-        domain::entities::auth::access_request::AccessRequestStatus::Approved
-    ));
+    assert!(matches!(approved.status, AccessRequestStatus::Approved));
+
     assert_eq!(approved.reviewed_by, Some(admin_user));
     assert_eq!(approved.assigned_roles, roles);
 }
