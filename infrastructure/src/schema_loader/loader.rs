@@ -22,7 +22,7 @@ use domain::entities::system_config::SystemConfig;
 use domain::services::schema_registry::SchemaRegistry;
 use domain::types::field_type::{FieldType, IntegerSize, PrimitiveType};
 use domain::value_objects::{AttributeId, DocumentTypeId, LocaleId, RelationId, SystemConfigId};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::fs;
@@ -58,6 +58,9 @@ pub enum SchemaLoaderError {
 
     #[error("Invalid attribute identifier '{0}': must be valid kebab-case")]
     InvalidAttributeId(String),
+
+    #[error("Invalid relation identifier '{0}': must be valid kebab-case (2-128 chars)")]
+    InvalidRelationId(String),
 
     #[error(
         "Identifier '{identifier}' in '{context}' is a reserved SQL keyword and cannot be used"
@@ -181,7 +184,8 @@ pub struct RawConstraint {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RawRelation {
-    pub id: Option<Uuid>,
+    pub id: Option<String>,
+    pub name: Option<String>,
     pub owner_type: String,
     pub owner_attr: String,
     pub owner_kind: RawOwnerRelationKind,
@@ -485,7 +489,7 @@ pub fn load_document_type_from_str(
         RawDocumentKind::SingleType => DocumentKind::SingleType,
     };
 
-    let mut fields = IndexMap::new();
+    let mut fields = IndexSet::new();
     for (attr_name, raw_field) in raw.attributes {
         let attr_id = AttributeId::try_new(&attr_name)
             .map_err(|_| SchemaLoaderError::InvalidAttributeId(attr_name.clone()))?;
@@ -515,7 +519,7 @@ pub fn load_document_type_from_str(
             constraints,
         };
 
-        fields.insert(attr_id, def);
+        fields.insert(def);
     }
 
     Ok(DocumentType {
@@ -567,10 +571,27 @@ pub fn load_relation_from_str(
         None => None,
     };
 
-    let id_uuid = raw.id.unwrap_or_else(Uuid::now_v7);
+    let id_str = if let Some(ref id) = raw.id {
+        id.clone()
+    } else if let Some(ref name) = raw.name {
+        name.clone()
+    } else {
+        let stem = Path::new(file_name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        if !stem.is_empty() && stem != "<in-memory>" && !stem.starts_with('<') {
+            stem.to_string()
+        } else {
+            format!("{}-{}", owner_type.as_ref(), owner_attr.as_ref())
+        }
+    };
+
+    let id =
+        RelationId::try_new(&id_str).map_err(|_| SchemaLoaderError::InvalidRelationId(id_str))?;
 
     Ok(Relation {
-        id: RelationId::new(id_uuid),
+        id,
         owner_type,
         owner_attr,
         owner_kind,

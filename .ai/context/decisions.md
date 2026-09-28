@@ -251,6 +251,21 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
   - Server-Side Rendering with HTMX + Askama (awkward recursive schema form generation, rigid multi-locale tabs, blurs headless API boundary).
 - See: [ADR-010](../../docs/adr/ADR-010-ui-architecture.md) and [ui-architecture.md](../../docs/ui-architecture.md).
 
+## 2026-09-28 — String-Backed RelationId & IndexSet Zero-Duplication Borrow Lookups
+
+- **String-Backed `RelationId` Derived from Name**:
+  - Replaced `RelationId(Uuid)` with kebab-case nutype `RelationId(String)` (`len_char_min = 2, len_char_max = 128`, regex `^[a-z][a-z0-9]*(-[a-z0-9]+)*$`).
+  - Added deterministic derivation helper `RelationId::derive(owner_type, owner_attr) -> RelationId` generating `${owner_type}-${owner_attr}`.
+  - Relations are static schema configuration cached in `SchemaRegistry`; the physical database stores relational links in `{owner}__{attr}_link` tables, meaning no database migration was affected by changing `RelationId` from `Uuid` to `String`.
+- **Eliminated Key Duplication in `DocumentType.fields` via `IndexSet<FieldDefinition>`**:
+  - Replaced `IndexMap<AttributeId, FieldDefinition>` with `IndexSet<FieldDefinition>`. Previously, `AttributeId` was stored twice: once as the map key and once as `FieldDefinition.id`.
+  - Implemented identity-based `PartialEq`, `Eq`, and `Hash` on `FieldDefinition` (hashing `self.id.as_ref()`).
+  - Implemented `Borrow<str>` and `Borrow<AttributeId>` on `FieldDefinition`, satisfying the standard library `Borrow` contract (hashes byte-identically).
+  - Enables zero-allocation $O(1)$ lookups directly via `doc_type.fields.get("title")`, `doc_type.fields.contains("title")`, `doc_type.find_field("title")`, and `doc_type.has_field("title")`.
+- **Identical Entity Lookups in `SchemaRegistry`**:
+  - Applied the same pattern to `DocumentType` (`IndexSet<DocumentType>` with `Borrow<DocumentTypeId>` and `Borrow<str>`) and `Relation` (`IndexSet<Relation>` with `Borrow<RelationId>` and `Borrow<str>`).
+  - Preserves declaration order across all schema entities while guaranteeing high-performance $O(1)$ zero-copy string queries throughout the workspace.
+
 ---
 
 > **AI agents**: when you make a non-obvious decision during implementation, append an entry here.

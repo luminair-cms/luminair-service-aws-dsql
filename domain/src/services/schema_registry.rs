@@ -1,3 +1,4 @@
+use indexmap::IndexSet;
 use std::collections::HashMap;
 
 use crate::entities::document_instance::DocumentContent;
@@ -114,27 +115,27 @@ fn evaluate_constraint(
 
 #[derive(Debug, Clone, Default)]
 pub struct SchemaRegistry {
-    types: HashMap<DocumentTypeId, DocumentType>,
+    types: IndexSet<DocumentType>,
     by_name: HashMap<String, DocumentTypeId>,
-    relations: HashMap<RelationId, Relation>,
+    relations: IndexSet<Relation>,
 }
 
 impl SchemaRegistry {
     pub fn new(types: Vec<DocumentType>, relations: Vec<Relation>) -> Self {
         let mut by_name = HashMap::new();
-        let mut type_map = HashMap::new();
+        let mut type_set = IndexSet::new();
         for dt in types {
             by_name.insert(dt.info.plural_name.clone(), dt.id.clone());
-            type_map.insert(dt.id.clone(), dt);
+            type_set.insert(dt);
         }
-        let mut relation_map = HashMap::new();
+        let mut relation_set = IndexSet::new();
         for r in relations {
-            relation_map.insert(r.id, r);
+            relation_set.insert(r);
         }
         Self {
-            types: type_map,
+            types: type_set,
             by_name,
-            relations: relation_map,
+            relations: relation_set,
         }
     }
 
@@ -150,13 +151,21 @@ impl SchemaRegistry {
 
     pub fn find_relations_for(&self, type_id: &DocumentTypeId) -> Vec<RelationView> {
         self.relations
-            .values()
+            .iter()
             .filter_map(|r| r.view_for(type_id))
             .collect()
     }
 
     pub fn all_relations(&self) -> impl Iterator<Item = &Relation> {
-        self.relations.values()
+        self.relations.iter()
+    }
+
+    pub fn find_relation(&self, id: &RelationId) -> Option<&Relation> {
+        self.relations.get(id)
+    }
+
+    pub fn find_relation_by_name(&self, name: &str) -> Option<&Relation> {
+        self.relations.get(name)
     }
 
     pub fn find_relation_for_attr(
@@ -164,7 +173,7 @@ impl SchemaRegistry {
         type_id: &DocumentTypeId,
         attr: &AttributeId,
     ) -> Option<&Relation> {
-        self.relations.values().find(|r| {
+        self.relations.iter().find(|r| {
             (&r.owner_type == type_id && &r.owner_attr == attr)
                 || (&r.target_type == type_id
                     && r.inverse.as_ref().map(|i| &i.inverse_attr) == Some(attr))
@@ -176,7 +185,7 @@ impl SchemaRegistry {
     }
 
     pub fn all_types(&self) -> impl Iterator<Item = &DocumentType> {
-        self.types.values()
+        self.types.iter()
     }
 
     pub fn validate_content(
@@ -193,7 +202,8 @@ impl SchemaRegistry {
         let mut errors = Vec::new();
 
         // 1. Validate declared fields
-        for (attr_id, field_def) in &doc_type.fields {
+        for field_def in &doc_type.fields {
+            let attr_id = &field_def.id;
             match content.fields.get(attr_id) {
                 None | Some(ContentValue::Null) => {
                     if field_def.required {
@@ -255,7 +265,7 @@ impl SchemaRegistry {
 
         // 2. Reject undeclared fields
         for attr_id in content.fields.keys() {
-            if !doc_type.fields.contains_key(attr_id) {
+            if !doc_type.fields.contains(attr_id) {
                 errors.push(DomainError::UnknownAttribute(attr_id.clone()));
             }
         }
@@ -271,7 +281,7 @@ impl SchemaRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use indexmap::IndexMap;
+    use indexmap::IndexSet;
     use uuid::Uuid;
 
     use crate::entities::document_instance::PublicationState;
@@ -288,27 +298,21 @@ mod tests {
         let title_attr = AttributeId::try_new("title").unwrap();
         let body_attr = AttributeId::try_new("body").unwrap();
 
-        let mut fields = IndexMap::new();
-        fields.insert(
-            title_attr.clone(),
-            FieldDefinition {
-                id: title_attr,
-                field_type: FieldType::Primitive(PrimitiveType::Text),
-                required: true,
-                unique: false,
-                constraints: vec![],
-            },
-        );
-        fields.insert(
-            body_attr.clone(),
-            FieldDefinition {
-                id: body_attr,
-                field_type: FieldType::LocalizedText,
-                required: false,
-                unique: false,
-                constraints: vec![],
-            },
-        );
+        let mut fields = IndexSet::new();
+        fields.insert(FieldDefinition {
+            id: title_attr,
+            field_type: FieldType::Primitive(PrimitiveType::Text),
+            required: true,
+            unique: false,
+            constraints: vec![],
+        });
+        fields.insert(FieldDefinition {
+            id: body_attr,
+            field_type: FieldType::LocalizedText,
+            required: false,
+            unique: false,
+            constraints: vec![],
+        });
 
         let doc_type = DocumentType {
             id: type_id,
@@ -365,10 +369,12 @@ mod tests {
     fn test_find_relations_for_owner() {
         let owner_type = DocumentTypeId::try_new("owner-type").unwrap();
         let target_type = DocumentTypeId::try_new("target-type").unwrap();
+        let owner_attr = AttributeId::try_new("tags").unwrap();
+        let id = RelationId::derive(&owner_type, &owner_attr);
         let rel = Relation {
-            id: RelationId::new(Uuid::now_v7()),
+            id,
             owner_type: owner_type.clone(),
-            owner_attr: AttributeId::try_new("tags").unwrap(),
+            owner_attr,
             owner_kind: OwnerRelationKind::HasMany,
             target_type,
             inverse: None,
@@ -384,10 +390,12 @@ mod tests {
     fn test_find_relations_for_inverse() {
         let owner_type = DocumentTypeId::try_new("owner-type").unwrap();
         let target_type = DocumentTypeId::try_new("target-type").unwrap();
+        let owner_attr = AttributeId::try_new("tags").unwrap();
+        let id = RelationId::derive(&owner_type, &owner_attr);
         let rel = Relation {
-            id: RelationId::new(Uuid::now_v7()),
+            id,
             owner_type,
-            owner_attr: AttributeId::try_new("tags").unwrap(),
+            owner_attr,
             owner_kind: OwnerRelationKind::HasMany,
             target_type: target_type.clone(),
             inverse: Some(RelationInverse {
@@ -500,17 +508,14 @@ mod tests {
 
         let type_id = DocumentTypeId::try_new("slugged").unwrap();
         let slug_attr = AttributeId::try_new("slug").unwrap();
-        let mut fields_def = IndexMap::new();
-        fields_def.insert(
-            slug_attr.clone(),
-            FieldDefinition {
-                id: slug_attr.clone(),
-                field_type: FieldType::Primitive(PrimitiveType::Text),
-                required: true,
-                unique: false,
-                constraints: vec![FieldConstraint::MinLength(5)],
-            },
-        );
+        let mut fields_def = IndexSet::new();
+        fields_def.insert(FieldDefinition {
+            id: slug_attr.clone(),
+            field_type: FieldType::Primitive(PrimitiveType::Text),
+            required: true,
+            unique: false,
+            constraints: vec![FieldConstraint::MinLength(5)],
+        });
         let doc_type = DocumentType {
             id: type_id.clone(),
             kind: crate::entities::document_type::DocumentKind::Collection,
@@ -556,17 +561,14 @@ mod tests {
 
         let type_id = DocumentTypeId::try_new("slugged").unwrap();
         let slug_attr = AttributeId::try_new("slug").unwrap();
-        let mut fields_def = IndexMap::new();
-        fields_def.insert(
-            slug_attr.clone(),
-            FieldDefinition {
-                id: slug_attr.clone(),
-                field_type: FieldType::Primitive(PrimitiveType::Text),
-                required: true,
-                unique: false,
-                constraints: vec![FieldConstraint::Pattern("^[a-z0-9-]+$".into())],
-            },
-        );
+        let mut fields_def = IndexSet::new();
+        fields_def.insert(FieldDefinition {
+            id: slug_attr.clone(),
+            field_type: FieldType::Primitive(PrimitiveType::Text),
+            required: true,
+            unique: false,
+            constraints: vec![FieldConstraint::Pattern("^[a-z0-9-]+$".into())],
+        });
         let doc_type = DocumentType {
             id: type_id.clone(),
             kind: crate::entities::document_type::DocumentKind::Collection,
@@ -648,27 +650,21 @@ mod tests {
         let type_id = DocumentTypeId::try_new("contact").unwrap();
         let email_attr = AttributeId::try_new("email").unwrap();
         let website_attr = AttributeId::try_new("website").unwrap();
-        let mut fields_def = IndexMap::new();
-        fields_def.insert(
-            email_attr.clone(),
-            FieldDefinition {
-                id: email_attr.clone(),
-                field_type: FieldType::Email,
-                required: true,
-                unique: false,
-                constraints: vec![],
-            },
-        );
-        fields_def.insert(
-            website_attr.clone(),
-            FieldDefinition {
-                id: website_attr.clone(),
-                field_type: FieldType::Url,
-                required: true,
-                unique: false,
-                constraints: vec![],
-            },
-        );
+        let mut fields_def = IndexSet::new();
+        fields_def.insert(FieldDefinition {
+            id: email_attr.clone(),
+            field_type: FieldType::Email,
+            required: true,
+            unique: false,
+            constraints: vec![],
+        });
+        fields_def.insert(FieldDefinition {
+            id: website_attr.clone(),
+            field_type: FieldType::Url,
+            required: true,
+            unique: false,
+            constraints: vec![],
+        });
         let doc_type = DocumentType {
             id: type_id.clone(),
             kind: crate::entities::document_type::DocumentKind::Collection,
@@ -745,20 +741,17 @@ mod tests {
     fn test_validate_content_localized_text_constraints() {
         let type_id = DocumentTypeId::try_new("post").unwrap();
         let summary_attr = AttributeId::try_new("summary").unwrap();
-        let mut fields_def = IndexMap::new();
-        fields_def.insert(
-            summary_attr.clone(),
-            FieldDefinition {
-                id: summary_attr.clone(),
-                field_type: FieldType::LocalizedText,
-                required: true,
-                unique: false,
-                constraints: vec![
-                    FieldConstraint::MinLength(5),
-                    FieldConstraint::MaxLength(20),
-                ],
-            },
-        );
+        let mut fields_def = IndexSet::new();
+        fields_def.insert(FieldDefinition {
+            id: summary_attr.clone(),
+            field_type: FieldType::LocalizedText,
+            required: true,
+            unique: false,
+            constraints: vec![
+                FieldConstraint::MinLength(5),
+                FieldConstraint::MaxLength(20),
+            ],
+        });
         let doc_type = DocumentType {
             id: type_id.clone(),
             kind: crate::entities::document_type::DocumentKind::Collection,

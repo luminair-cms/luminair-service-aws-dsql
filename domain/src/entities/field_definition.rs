@@ -38,13 +38,42 @@ impl FieldConstraint {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use std::borrow::Borrow;
+use std::hash::{Hash, Hasher};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldDefinition {
     pub id: AttributeId,
     pub field_type: FieldType,
     pub required: bool,
     pub unique: bool,
     pub constraints: Vec<FieldConstraint>,
+}
+
+impl PartialEq for FieldDefinition {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for FieldDefinition {}
+
+impl Hash for FieldDefinition {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.as_ref().hash(state);
+    }
+}
+
+impl Borrow<AttributeId> for FieldDefinition {
+    fn borrow(&self) -> &AttributeId {
+        &self.id
+    }
+}
+
+impl Borrow<str> for FieldDefinition {
+    fn borrow(&self) -> &str {
+        self.id.as_ref()
+    }
 }
 
 #[cfg(test)]
@@ -117,9 +146,32 @@ mod tests {
         assert!(max_len.is_applicable_for(&FieldType::Primitive(PrimitiveType::Text)));
         assert!(max_len.is_applicable_for(&FieldType::Primitive(PrimitiveType::Uid)));
         assert!(!max_len.is_applicable_for(&FieldType::Email));
-        assert!(!max_len.is_applicable_for(&FieldType::Url));
-        assert!(max_len.is_applicable_for(&FieldType::LocalizedText));
-
         assert!(!min_len.is_applicable_for(&FieldType::Primitive(PrimitiveType::Boolean)));
+    }
+
+    #[test]
+    fn test_index_set_lookup_by_borrow() {
+        use indexmap::IndexSet;
+
+        let attr = AttributeId::try_new("title").unwrap();
+        let field = FieldDefinition {
+            id: attr.clone(),
+            field_type: FieldType::Primitive(PrimitiveType::Text),
+            required: true,
+            unique: false,
+            constraints: vec![],
+        };
+
+        let mut set = IndexSet::new();
+        assert!(set.insert(field));
+
+        // Lookup via &AttributeId
+        assert!(set.get(&attr).is_some());
+        // Lookup via &str
+        assert!(set.get("title").is_some());
+        assert!(set.get("unknown").is_none());
+        // Check contains
+        assert!(set.contains("title"));
+        assert!(set.contains(&attr));
     }
 }

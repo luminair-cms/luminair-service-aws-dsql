@@ -62,18 +62,16 @@ fn parse_filters(
             } else {
                 continue;
             }
-        } else if doc_type.fields.keys().any(|a| a.as_ref() == k) {
+        } else if doc_type.has_field(k) {
             k.as_str()
         } else {
             continue;
         };
 
-        if let Ok(attr_id) = AttributeId::try_new(attr_name)
-            && let Some(field_def) = doc_type.fields.get(&attr_id)
-        {
+        if let Some(field_def) = doc_type.find_field(attr_name) {
             let domain_val = string_to_domain_value(v, &field_def.field_type)?;
             filters.push(FieldFilter {
-                attribute_id: attr_id,
+                attribute_id: field_def.id.clone(),
                 value: domain_val,
             });
         }

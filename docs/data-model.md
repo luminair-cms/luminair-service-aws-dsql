@@ -28,7 +28,7 @@ Defines the schema for content instances.
   - `plural_name`: String (used in collection API URLs).
   - `description`: Optional text.
 - **`options`**: `draft_and_publish: bool`.
-- **`fields`**: `IndexMap<AttributeId, FieldDefinition>` preserving declared attribute order.
+- **`fields`**: `IndexSet<FieldDefinition>` preserving declared attribute order, with zero-allocation $O(1)$ lookups by `&str` and `&AttributeId` via `Borrow<str>` / `Borrow<AttributeId>` and identity hashing.
 
 ### 2.2. `FieldDefinition` & `FieldConstraint`
 Defines attributes of a `DocumentType`.
@@ -49,7 +49,7 @@ Defines attributes of a `DocumentType`.
 
 ### 2.3. `Relation`
 First-class domain entity modeling relationships between document types (ADR-004, ADR-009).
-- **`id`**: `RelationId` (`Uuid`).
+- **`id`**: `RelationId` (kebab-case string nutype, 2–128 characters, regex `^[a-z][a-z0-9]*(-[a-z0-9]+)*$`; derived from `${owner_type}-${owner_attr}` or explicit kebab-case relation name).
 - **`owner_type`**: `DocumentTypeId`.
 - **`owner_attr`**: `AttributeId`.
 - **`owner_kind`**: `OwnerRelationKind::HasOne` or `OwnerRelationKind::HasMany`.

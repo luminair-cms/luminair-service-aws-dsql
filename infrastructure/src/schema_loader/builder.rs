@@ -153,7 +153,8 @@ fn build_document_type_tables(
     }
 
     // 2. User-declared attribute columns on the entity table
-    for (attr_id, field_def) in &doc_type.fields {
+    for field_def in &doc_type.fields {
+        let attr_id = &field_def.id;
         let col_name = attribute_to_column_name(attr_id);
         let data_type = map_field_type_to_sql(&field_def.field_type);
         let nullable = !field_def.required;
@@ -267,7 +268,8 @@ fn build_document_type_tables(
         }
 
         // Add user-declared attribute columns to published mirror table
-        for (attr_id, field_def) in &doc_type.fields {
+        for field_def in &doc_type.fields {
+            let attr_id = &field_def.id;
             let col_name = attribute_to_column_name(attr_id);
             let data_type = map_field_type_to_sql(&field_def.field_type);
             let nullable = !field_def.required;
@@ -508,8 +510,7 @@ mod tests {
     use domain::entities::field_definition::FieldDefinition;
     use domain::entities::relation::Relation;
     use domain::value_objects::{AttributeId, DocumentTypeId, RelationId};
-    use indexmap::IndexMap;
-    use uuid::Uuid;
+    use indexmap::IndexSet;
 
     #[test]
     fn test_build_desired_schema_with_relations_and_junctions() {
@@ -517,29 +518,23 @@ mod tests {
         let author_type_id = DocumentTypeId::try_new("author").unwrap();
         let tag_type_id = DocumentTypeId::try_new("tag").unwrap();
 
-        let mut article_fields = IndexMap::new();
+        let mut article_fields = IndexSet::new();
         let title_attr = AttributeId::try_new("title").unwrap();
-        article_fields.insert(
-            title_attr.clone(),
-            FieldDefinition {
-                id: title_attr,
-                field_type: FieldType::Primitive(PrimitiveType::Text),
-                required: true,
-                unique: false,
-                constraints: vec![],
-            },
-        );
+        article_fields.insert(FieldDefinition {
+            id: title_attr,
+            field_type: FieldType::Primitive(PrimitiveType::Text),
+            required: true,
+            unique: false,
+            constraints: vec![],
+        });
         let slug_attr = AttributeId::try_new("slug").unwrap();
-        article_fields.insert(
-            slug_attr.clone(),
-            FieldDefinition {
-                id: slug_attr,
-                field_type: FieldType::Primitive(PrimitiveType::Uid),
-                required: true,
-                unique: true,
-                constraints: vec![],
-            },
-        );
+        article_fields.insert(FieldDefinition {
+            id: slug_attr,
+            field_type: FieldType::Primitive(PrimitiveType::Uid),
+            required: true,
+            unique: true,
+            constraints: vec![],
+        });
 
         let article_dt = DocumentType {
             id: article_type_id.clone(),
@@ -568,7 +563,7 @@ mod tests {
             options: DocumentTypeOptions {
                 draft_and_publish: false,
             },
-            fields: IndexMap::new(),
+            fields: IndexSet::new(),
         };
 
         let tag_dt = DocumentType {
@@ -583,24 +578,28 @@ mod tests {
             options: DocumentTypeOptions {
                 draft_and_publish: false,
             },
-            fields: IndexMap::new(),
+            fields: IndexSet::new(),
         };
 
+        let author_attr = AttributeId::try_new("author").unwrap();
+        let author_rel_id = RelationId::derive(&article_type_id, &author_attr);
         // 1:1 author relation on article
         let author_rel = Relation {
-            id: RelationId::new(Uuid::now_v7()),
+            id: author_rel_id,
             owner_type: article_type_id.clone(),
-            owner_attr: AttributeId::try_new("author").unwrap(),
+            owner_attr: author_attr,
             owner_kind: OwnerRelationKind::HasOne,
             target_type: author_type_id,
             inverse: None,
         };
 
+        let tags_attr = AttributeId::try_new("tags").unwrap();
+        let tags_rel_id = RelationId::derive(&article_type_id, &tags_attr);
         // N:N tags relation on article
         let tag_rel = Relation {
-            id: RelationId::new(Uuid::now_v7()),
+            id: tags_rel_id,
             owner_type: article_type_id,
-            owner_attr: AttributeId::try_new("tags").unwrap(),
+            owner_attr: tags_attr,
             owner_kind: OwnerRelationKind::HasMany,
             target_type: tag_type_id,
             inverse: None,
@@ -805,7 +804,7 @@ mod tests {
             options: DocumentTypeOptions {
                 draft_and_publish: true,
             },
-            fields: IndexMap::new(),
+            fields: IndexSet::new(),
         };
 
         // Author ALSO has draft_and_publish: true
@@ -821,13 +820,14 @@ mod tests {
             options: DocumentTypeOptions {
                 draft_and_publish: true,
             },
-            fields: IndexMap::new(),
+            fields: IndexSet::new(),
         };
 
+        let author_attr = AttributeId::try_new("author").unwrap();
         let author_rel = Relation {
-            id: RelationId::new(Uuid::now_v7()),
+            id: RelationId::derive(&article_type_id, &author_attr),
             owner_type: article_type_id,
-            owner_attr: AttributeId::try_new("author").unwrap(),
+            owner_attr: author_attr,
             owner_kind: OwnerRelationKind::HasOne,
             target_type: author_type_id,
             inverse: None,

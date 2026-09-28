@@ -210,7 +210,7 @@ mod tests {
     use super::*;
     use domain::entities::document_type::{DocumentTypeInfo, DocumentTypeOptions};
     use domain::value_objects::DocumentTypeId;
-    use indexmap::IndexMap;
+    use indexmap::IndexSet;
 
     #[test]
     fn test_kebab_to_snake() {
@@ -233,7 +233,7 @@ mod tests {
             options: DocumentTypeOptions {
                 draft_and_publish: true,
             },
-            fields: IndexMap::new(),
+            fields: IndexSet::new(),
         };
         assert_eq!(document_type_to_table_name(&dt), "blog_posts");
     }
@@ -252,7 +252,7 @@ mod tests {
             options: DocumentTypeOptions {
                 draft_and_publish: false,
             },
-            fields: IndexMap::new(),
+            fields: IndexSet::new(),
         };
         assert_eq!(document_type_to_table_name(&dt), "site_setting");
     }

@@ -71,7 +71,8 @@ impl SnapshotRepository for SqlxSnapshotRepository {
                 let published_by = published_by_opt.and_then(|s| UserId::try_new(s).ok());
 
                 let mut fields = HashMap::new();
-                for (attr_id, field_def) in &doc_type.fields {
+                for field_def in &doc_type.fields {
+                    let attr_id = &field_def.id;
                     let col_name = attribute_to_column_name(attr_id);
                     let val = read_content_value(&row, &col_name, &field_def.field_type)?;
                     fields.insert(attr_id.clone(), val);

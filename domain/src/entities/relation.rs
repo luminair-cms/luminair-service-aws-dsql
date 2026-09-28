@@ -1,3 +1,6 @@
+use std::borrow::Borrow;
+use std::hash::{Hash, Hasher};
+
 use serde::{Deserialize, Serialize};
 
 use crate::value_objects::{AttributeId, DocumentTypeId, RelationId};
@@ -19,7 +22,7 @@ pub struct RelationInverse {
     pub inverse_attr: AttributeId,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Relation {
     pub id: RelationId,
     pub owner_type: DocumentTypeId,
@@ -27,6 +30,32 @@ pub struct Relation {
     pub owner_kind: OwnerRelationKind,
     pub target_type: DocumentTypeId,
     pub inverse: Option<RelationInverse>,
+}
+
+impl PartialEq for Relation {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for Relation {}
+
+impl Hash for Relation {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.as_ref().hash(state);
+    }
+}
+
+impl Borrow<RelationId> for Relation {
+    fn borrow(&self) -> &RelationId {
+        &self.id
+    }
+}
+
+impl Borrow<str> for Relation {
+    fn borrow(&self) -> &str {
+        self.id.as_ref()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,7 +119,6 @@ impl Relation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uuid::Uuid;
 
     fn make_test_ids() -> (
         DocumentTypeId,
@@ -99,13 +127,34 @@ mod tests {
         AttributeId,
         AttributeId,
     ) {
-        (
-            DocumentTypeId::try_new("article").unwrap(),
-            DocumentTypeId::try_new("tag").unwrap(),
-            RelationId::new(Uuid::now_v7()),
-            AttributeId::try_new("tags").unwrap(),
-            AttributeId::try_new("articles").unwrap(),
-        )
+        let owner = DocumentTypeId::try_new("article").unwrap();
+        let target = DocumentTypeId::try_new("tag").unwrap();
+        let owner_attr = AttributeId::try_new("tags").unwrap();
+        let inv_attr = AttributeId::try_new("articles").unwrap();
+        let id = RelationId::derive(&owner, &owner_attr);
+        (owner, target, id, owner_attr, inv_attr)
+    }
+
+    #[test]
+    fn test_relation_borrow_in_index_set() {
+        use indexmap::IndexSet;
+
+        let (owner, target, id, owner_attr, _) = make_test_ids();
+        let relation = Relation {
+            id: id.clone(),
+            owner_type: owner,
+            owner_attr,
+            owner_kind: OwnerRelationKind::HasMany,
+            target_type: target,
+            inverse: None,
+        };
+
+        let mut set = IndexSet::new();
+        assert!(set.insert(relation));
+
+        assert!(set.get(&id).is_some());
+        assert!(set.get("article-tags").is_some());
+        assert!(set.get("unknown-rel").is_none());
     }
 
     #[test]

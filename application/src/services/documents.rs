@@ -471,7 +471,7 @@ mod tests {
     use domain::types::field_type::{FieldType, PrimitiveType};
     use domain::types::primitive_value::PrimitiveValue;
     use domain::value_objects::{LocaleId, SystemConfigId, UserId};
-    use indexmap::IndexMap;
+    use indexmap::IndexSet;
     use uuid::Uuid;
 
     use crate::test_support::{FakeDocumentInstanceRepository, FakeSnapshotRepository};
@@ -487,17 +487,14 @@ mod tests {
         let type_id = DocumentTypeId::try_new("article").unwrap();
         let title_attr = AttributeId::try_new("title").unwrap();
 
-        let mut fields = IndexMap::new();
-        fields.insert(
-            title_attr.clone(),
-            FieldDefinition {
-                id: title_attr.clone(),
-                field_type: FieldType::Primitive(PrimitiveType::Text),
-                required: true,
-                unique: false,
-                constraints: vec![],
-            },
-        );
+        let mut fields = IndexSet::new();
+        fields.insert(FieldDefinition {
+            id: title_attr.clone(),
+            field_type: FieldType::Primitive(PrimitiveType::Text),
+            required: true,
+            unique: false,
+            constraints: vec![],
+        });
 
         let doc_type = DocumentType {
             id: type_id,
@@ -853,17 +850,14 @@ mod tests {
         let type_id = DocumentTypeId::try_new("simple").unwrap();
         let title_attr = AttributeId::try_new("title").unwrap();
 
-        let mut field_defs = IndexMap::new();
-        field_defs.insert(
-            title_attr.clone(),
-            FieldDefinition {
-                id: title_attr.clone(),
-                field_type: FieldType::Primitive(PrimitiveType::Text),
-                required: false,
-                unique: false,
-                constraints: vec![],
-            },
-        );
+        let mut field_defs = IndexSet::new();
+        field_defs.insert(FieldDefinition {
+            id: title_attr.clone(),
+            field_type: FieldType::Primitive(PrimitiveType::Text),
+            required: false,
+            unique: false,
+            constraints: vec![],
+        });
 
         use domain::entities::document_type::{
             DocumentType, DocumentTypeInfo, DocumentTypeOptions,

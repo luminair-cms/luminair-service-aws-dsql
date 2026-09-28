@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use indexmap::IndexMap;
+use indexmap::IndexSet;
 use uuid::Uuid;
 
 use crate::entities::document_instance::DocumentInstance;
@@ -48,9 +48,8 @@ pub fn make_text_field(id: &str) -> FieldDefinition {
 }
 
 pub fn make_document_type(kind: DocumentKind) -> DocumentType {
-    let mut fields = IndexMap::new();
-    let field = make_text_field("title");
-    fields.insert(field.id.clone(), field);
+    let mut fields = IndexSet::new();
+    fields.insert(make_text_field("title"));
 
     DocumentType {
         id: document_type_id(),

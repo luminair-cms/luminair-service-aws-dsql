@@ -489,7 +489,8 @@ pub fn string_to_domain_value(s: &str, field_type: &FieldType) -> Result<DomainV
 /// Converts a `DocumentType` to its introspection API JSON representation.
 pub fn document_type_to_json(doc_type: &DocumentType) -> serde_json::Value {
     let mut attr_map = serde_json::Map::new();
-    for (attr_id, def) in &doc_type.fields {
+    for def in &doc_type.fields {
+        let attr_id = &def.id;
         let mut field_info = serde_json::Map::new();
         field_info.insert("type".to_string(), json!(format!("{:?}", def.field_type)));
         field_info.insert("required".to_string(), json!(def.required));

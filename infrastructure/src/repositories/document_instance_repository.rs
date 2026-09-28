@@ -337,7 +337,8 @@ impl DocumentInstanceRepository for SqlxDocumentInstanceRepository {
 
             // User declared fields
             let mut fields = HashMap::new();
-            for (attr_id, field_def) in &doc_type.fields {
+            for field_def in &doc_type.fields {
+                let attr_id = &field_def.id;
                 let col_name = attribute_to_column_name(attr_id);
                 let val = read_content_value(&row, &col_name, &field_def.field_type)?;
                 fields.insert(attr_id.clone(), val);
@@ -507,7 +508,8 @@ impl DocumentInstanceRepository for SqlxDocumentInstanceRepository {
                 let pub_state_str: String = row.get("publication_state");
 
                 let mut fields = HashMap::new();
-                for (attr_id, field_def) in &doc_type.fields {
+                for field_def in &doc_type.fields {
+                    let attr_id = &field_def.id;
                     let col_name = attribute_to_column_name(attr_id);
                     let val = read_content_value(&row, &col_name, &field_def.field_type)?;
                     fields.insert(attr_id.clone(), val);
@@ -701,7 +703,8 @@ impl DocumentInstanceRepository for SqlxDocumentInstanceRepository {
                     let updated_at: DateTime<Utc> = row.get("updated_at");
 
                     let mut fields = HashMap::new();
-                    for (c_attr_id, c_field_def) in &target_dt.fields {
+                    for c_field_def in &target_dt.fields {
+                        let c_attr_id = &c_field_def.id;
                         let c_col = attribute_to_column_name(c_attr_id);
                         let val = read_content_value(&row, &c_col, &c_field_def.field_type)?;
                         fields.insert(c_attr_id.clone(), val);
@@ -789,8 +792,8 @@ impl DocumentInstanceRepository for SqlxDocumentInstanceRepository {
                 qb.push(", _singleton");
             }
 
-            for attr_id in doc_type.fields.keys() {
-                let col = attribute_to_column_name(attr_id);
+            for field_def in &doc_type.fields {
+                let col = attribute_to_column_name(&field_def.id);
                 qb.push(", \"");
                 qb.push(&col);
                 qb.push("\"");
@@ -813,16 +816,16 @@ impl DocumentInstanceRepository for SqlxDocumentInstanceRepository {
                 qb.push(", TRUE");
             }
 
-            for (attr_id, field_def) in &doc_type.fields {
+            for field_def in &doc_type.fields {
                 qb.push(", ");
-                let val = instance.content.fields.get(attr_id);
+                let val = instance.content.fields.get(&field_def.id);
                 bind_content_value(&mut qb, val, &field_def.field_type)?;
             }
 
             qb.push(") ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version, owner_id = EXCLUDED.owner_id, publication_state = EXCLUDED.publication_state, updated_at = EXCLUDED.updated_at");
 
-            for attr_id in doc_type.fields.keys() {
-                let col = attribute_to_column_name(attr_id);
+            for field_def in &doc_type.fields {
+                let col = attribute_to_column_name(&field_def.id);
                 qb.push(", \"");
                 qb.push(&col);
                 qb.push("\" = EXCLUDED.\"");
@@ -901,8 +904,8 @@ impl DocumentInstanceRepository for SqlxDocumentInstanceRepository {
                             pub_qb.push(", _singleton");
                         }
 
-                        for attr_id in doc_type.fields.keys() {
-                            let col = attribute_to_column_name(attr_id);
+                        for field_def in &doc_type.fields {
+                            let col = attribute_to_column_name(&field_def.id);
                             pub_qb.push(", \"");
                             pub_qb.push(&col);
                             pub_qb.push("\"");
@@ -927,16 +930,16 @@ impl DocumentInstanceRepository for SqlxDocumentInstanceRepository {
                             pub_qb.push(", TRUE");
                         }
 
-                        for (attr_id, field_def) in &doc_type.fields {
+                        for field_def in &doc_type.fields {
                             pub_qb.push(", ");
-                            let val = instance.content.fields.get(attr_id);
+                            let val = instance.content.fields.get(&field_def.id);
                             bind_content_value(&mut pub_qb, val, &field_def.field_type)?;
                         }
 
                         pub_qb.push(") ON CONFLICT (id) DO UPDATE SET published_version = EXCLUDED.published_version, owner_id = EXCLUDED.owner_id, updated_at = EXCLUDED.updated_at, published_at = EXCLUDED.published_at, published_by = EXCLUDED.published_by");
 
-                        for attr_id in doc_type.fields.keys() {
-                            let col = attribute_to_column_name(attr_id);
+                        for field_def in &doc_type.fields {
+                            let col = attribute_to_column_name(&field_def.id);
                             pub_qb.push(", \"");
                             pub_qb.push(&col);
                             pub_qb.push("\" = EXCLUDED.\"");

@@ -21,7 +21,7 @@ use domain::types::primitive_value::PrimitiveValue;
 use domain::value_objects::{
     AttributeId, DocumentTypeId, LocaleId, RoleId, SystemConfigId, UserId,
 };
-use indexmap::IndexMap;
+use indexmap::IndexSet;
 use uuid::Uuid;
 
 use application::commands::*;
@@ -79,27 +79,21 @@ impl TestAppHarness {
         let title_attr = AttributeId::try_new("title").unwrap();
         let body_attr = AttributeId::try_new("body").unwrap();
 
-        let mut article_fields = IndexMap::new();
-        article_fields.insert(
-            title_attr.clone(),
-            FieldDefinition {
-                id: title_attr.clone(),
-                field_type: FieldType::Primitive(PrimitiveType::Text),
-                required: true,
-                unique: false,
-                constraints: vec![],
-            },
-        );
-        article_fields.insert(
-            body_attr.clone(),
-            FieldDefinition {
-                id: body_attr.clone(),
-                field_type: FieldType::LocalizedText,
-                required: false,
-                unique: false,
-                constraints: vec![],
-            },
-        );
+        let mut article_fields = IndexSet::new();
+        article_fields.insert(FieldDefinition {
+            id: title_attr.clone(),
+            field_type: FieldType::Primitive(PrimitiveType::Text),
+            required: true,
+            unique: false,
+            constraints: vec![],
+        });
+        article_fields.insert(FieldDefinition {
+            id: body_attr.clone(),
+            field_type: FieldType::LocalizedText,
+            required: false,
+            unique: false,
+            constraints: vec![],
+        });
 
         let article_type = DocumentType {
             id: article_type_id.clone(),
@@ -117,17 +111,14 @@ impl TestAppHarness {
         };
 
         let single_type_id = DocumentTypeId::try_new("homepage").unwrap();
-        let mut single_fields = IndexMap::new();
-        single_fields.insert(
-            title_attr.clone(),
-            FieldDefinition {
-                id: title_attr.clone(),
-                field_type: FieldType::Primitive(PrimitiveType::Text),
-                required: true,
-                unique: false,
-                constraints: vec![],
-            },
-        );
+        let mut single_fields = IndexSet::new();
+        single_fields.insert(FieldDefinition {
+            id: title_attr.clone(),
+            field_type: FieldType::Primitive(PrimitiveType::Text),
+            required: true,
+            unique: false,
+            constraints: vec![],
+        });
 
         let single_type = DocumentType {
             id: single_type_id,
