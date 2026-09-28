@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::user_role_assignment::UserRoleAssignment;
+use super::role::UserRoleAssignment;
 use crate::errors::DomainError;
 use crate::value_objects::{AccessRequestId, RoleId, UserId, UserRoleAssignmentId};
 

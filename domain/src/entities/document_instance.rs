@@ -4,7 +4,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::published_snapshot::PublishedSnapshot;
 use crate::errors::DomainError;
 use crate::types::content_value::ContentValue;
 use crate::value_objects::{AttributeId, DocumentInstanceId, DocumentTypeId, SnapshotId, UserId};
@@ -40,6 +39,17 @@ pub struct ResolvedRelation {
 pub struct DocumentContent {
     pub fields: HashMap<AttributeId, ContentValue>,
     pub publication_state: PublicationState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PublishedSnapshot {
+    pub id: SnapshotId,
+    pub instance_id: DocumentInstanceId,
+    pub type_name: String,
+    pub revision: u32,
+    pub published_at: DateTime<Utc>,
+    pub published_by: Option<UserId>,
+    pub fields: HashMap<AttributeId, ContentValue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

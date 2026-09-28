@@ -1,6 +1,7 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::value_objects::{DocumentTypeId, RoleId};
+use crate::value_objects::{DocumentTypeId, RoleId, UserId, UserRoleAssignmentId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Permission {
@@ -49,6 +50,15 @@ impl Role {
     pub fn has_permission(&self, action: &Permission) -> bool {
         self.permissions.iter().any(|p| p.matches(action))
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UserRoleAssignment {
+    pub id: UserRoleAssignmentId,
+    pub user_id: UserId,
+    pub role_id: RoleId,
+    pub granted_at: DateTime<Utc>,
+    pub granted_by: Option<UserId>, // None = system / bootstrap grant
 }
 
 #[cfg(test)]

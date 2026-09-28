@@ -266,6 +266,18 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
   - Applied the same pattern to `DocumentType` (`IndexSet<DocumentType>` with `Borrow<DocumentTypeId>` and `Borrow<str>`) and `Relation` (`IndexSet<Relation>` with `Borrow<RelationId>` and `Borrow<str>`).
   - Preserves declaration order across all schema entities while guaranteeing high-performance $O(1)$ zero-copy string queries throughout the workspace.
 
+## 2026-09-28 — Domain Crate Restructuring (Steps 1 & 2)
+
+- **Pruned Leaked SQL Types from Domain**:
+  - Removed `sql_type_name` methods from `PrimitiveType` and `FieldType` in `domain::types::field_type`.
+  - Hardcoded SQL DDL syntax strings belong strictly in `infrastructure::schema_loader::builder::map_field_type_to_sql`, preserving the pure architectural boundary of `domain`.
+- **Consolidated Micro-Files**:
+  - Merged `ContentValue` (14 lines) into `domain::types::domain_value`, unifying `ContentValue -> DomainValue -> PrimitiveValue` in one file with `From` conversions.
+  - Merged `UserRoleAssignment` (14 lines) into `domain::entities::auth::role`.
+  - Merged `PublishedSnapshot` (19 lines) into `domain::entities::document_instance`.
+  - Provided transparent backward-compatible module aliases in `types/mod.rs`, `entities/mod.rs`, and `entities/auth/mod.rs` (`content_value`, `user_role_assignment`, `published_snapshot`) ensuring zero churn for existing workspace imports.
+  - Deleted obsolete 10–19 line micro-files.
+
 ---
 
 > **AI agents**: when you make a non-obvious decision during implementation, append an entry here.

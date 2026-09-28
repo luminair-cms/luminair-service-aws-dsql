@@ -4,7 +4,26 @@ use serde::{Deserialize, Serialize};
 
 use super::field_type::FieldType;
 use super::primitive_value::PrimitiveValue;
-use crate::value_objects::{Email, Url};
+use crate::value_objects::{Email, LocaleId, Url};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ContentValue {
+    Scalar(DomainValue),
+    LocalizedText(HashMap<LocaleId, String>),
+    Null,
+}
+
+impl From<DomainValue> for ContentValue {
+    fn from(v: DomainValue) -> Self {
+        ContentValue::Scalar(v)
+    }
+}
+
+impl From<PrimitiveValue> for ContentValue {
+    fn from(p: PrimitiveValue) -> Self {
+        ContentValue::Scalar(DomainValue::Primitive(p))
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DomainValue {
