@@ -65,6 +65,19 @@ impl FindByIdCommand {
     }
 }
 
+/// Relational mutation actions for document creation and update.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RelationAction {
+    /// Replaces all existing relations for this attribute with the given target IDs.
+    Set(Vec<DocumentInstanceId>),
+    /// Appends the specified target IDs to existing relations without removing current links.
+    Connect(Vec<DocumentInstanceId>),
+    /// Removes the specified target IDs from existing relations.
+    Disconnect(Vec<DocumentInstanceId>),
+    /// Clears all relations for this attribute.
+    Unset,
+}
+
 /// Command to create a new draft document instance.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CreateDocumentCommand {
@@ -72,6 +85,10 @@ pub struct CreateDocumentCommand {
     pub document_type: DocumentTypeId,
     /// Initial field values keyed by attribute ID.
     pub fields: HashMap<AttributeId, ContentValue>,
+    /// Relational mutations keyed by attribute ID.
+    pub relations: HashMap<AttributeId, RelationAction>,
+    /// Optional list of relation attribute IDs to populate in the returned document.
+    pub populate: Option<Vec<AttributeId>>,
 }
 
 impl CreateDocumentCommand {
@@ -79,7 +96,19 @@ impl CreateDocumentCommand {
         Self {
             document_type,
             fields,
+            relations: HashMap::new(),
+            populate: None,
         }
+    }
+
+    pub fn with_relations(mut self, relations: HashMap<AttributeId, RelationAction>) -> Self {
+        self.relations = relations;
+        self
+    }
+
+    pub fn with_populate(mut self, populate: Vec<AttributeId>) -> Self {
+        self.populate = Some(populate);
+        self
     }
 }
 
@@ -92,6 +121,10 @@ pub struct UpdateDocumentCommand {
     pub document_type: DocumentTypeId,
     /// Updated field values keyed by attribute ID.
     pub fields: HashMap<AttributeId, ContentValue>,
+    /// Relational mutations keyed by attribute ID.
+    pub relations: HashMap<AttributeId, RelationAction>,
+    /// Optional list of relation attribute IDs to populate in the returned document.
+    pub populate: Option<Vec<AttributeId>>,
 }
 
 impl UpdateDocumentCommand {
@@ -104,7 +137,19 @@ impl UpdateDocumentCommand {
             document_instance_id,
             document_type,
             fields,
+            relations: HashMap::new(),
+            populate: None,
         }
+    }
+
+    pub fn with_relations(mut self, relations: HashMap<AttributeId, RelationAction>) -> Self {
+        self.relations = relations;
+        self
+    }
+
+    pub fn with_populate(mut self, populate: Vec<AttributeId>) -> Self {
+        self.populate = Some(populate);
+        self
     }
 }
 

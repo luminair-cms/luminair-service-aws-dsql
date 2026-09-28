@@ -140,6 +140,25 @@ impl DocumentInstanceRepository for FakeDocumentInstanceRepository {
             .write()
             .map_err(|_| DomainError::Unauthorized("failed to acquire write lock".into()))?;
         store.insert(instance.id, instance.clone());
+
+        let mut rel_store = self
+            .relations
+            .write()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire write lock".into()))?;
+
+        for by_parent in rel_store.values_mut() {
+            by_parent.remove(&instance.id);
+        }
+
+        for (attr, resolved_list) in &instance.relations {
+            let by_parent = rel_store.entry(attr.clone()).or_default();
+            let related_instances: Vec<DocumentInstance> = resolved_list
+                .iter()
+                .filter_map(|r| store.get(&r.target_instance_id).cloned())
+                .collect();
+            by_parent.insert(instance.id, related_instances);
+        }
+
         Ok(())
     }
 
@@ -153,6 +172,15 @@ impl DocumentInstanceRepository for FakeDocumentInstanceRepository {
             .write()
             .map_err(|_| DomainError::Unauthorized("failed to acquire write lock".into()))?;
         store.remove(&id);
+
+        let mut rel_store = self
+            .relations
+            .write()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire write lock".into()))?;
+        for by_parent in rel_store.values_mut() {
+            by_parent.remove(&id);
+        }
+
         Ok(())
     }
 

@@ -123,4 +123,45 @@ Single types (e.g. `homepage`, `site-settings`) represent unique singletons with
 
 ---
 
+## 7. Relational Mutations & Read-After-Write (ADR-011)
+
+Luminair supports Strapi-compatible relational mutations on write commands (`POST` and `PUT`), with optional immediate read-after-write enrichment via `?populate=...`.
+
+### Request Payloads
+
+#### Explicit Action Objects
+```json
+{
+  "title": "Getting Started with Aurora DSQL",
+  "category": {
+    "connect": ["01920000-0000-7000-8000-000000000001"]
+  },
+  "tags": {
+    "set": [
+      "01920000-0000-7000-8000-000000000010",
+      "01920000-0000-7000-8000-000000000020"
+    ]
+  }
+}
+```
+
+Supported actions:
+- `connect`: Appends target UUIDs to existing relations without removing current links (`HasMany` or `HasOne` if currently empty).
+- `disconnect`: Removes target UUIDs from existing relations.
+- `set`: Replaces all relations for the attribute with the given target UUIDs.
+- `unset`: `{"unset": true}` clears all relations for the attribute.
+
+#### Shorthand Syntax
+- `"category": "01920000-0000-7000-8000-000000000001"` -> Equivalent to `set: [uuid]`
+- `"category": { "id": "01920000-0000-7000-8000-000000000001" }` -> Equivalent to `set: [uuid]`
+- `"tags": ["0192...", "0192..."]` -> Equivalent to `set: [uuid1, uuid2]`
+- `"category": null` -> Equivalent to `unset: true`
+
+### Read-After-Write (`?populate=...`)
+
+When creating (`POST /api/{plural_name}?populate=category,tags`) or updating (`PUT /api/{plural_name}/{id}?populate=tags`) documents, specifying `?populate` instructs the server to enrich and return the populated relational representation in the `201 Created` or `200 OK` response envelope in a single HTTP roundtrip.
+
+---
+
 > **AI agents**: update this file whenever you add, modify, or remove an endpoint.
+

@@ -112,7 +112,27 @@ fn setup_sample_schema_dir(temp_dir: &Path) {
     }"#;
     fs::write(doc_types_dir.join("homepage.json"), homepage_json).unwrap();
 
-    // 4. article-author.json relation (1:1 / N:1)
+    // 4. tag.json (Collection without Draft & Publish)
+    let tag_json = r#"{
+        "kind": "collection",
+        "info": {
+            "displayName": "Tag",
+            "singularName": "tag",
+            "pluralName": "tags"
+        },
+        "options": {
+            "draftAndPublish": false
+        },
+        "attributes": {
+            "name": {
+                "type": "text",
+                "required": true
+            }
+        }
+    }"#;
+    fs::write(doc_types_dir.join("tag.json"), tag_json).unwrap();
+
+    // 5. article-author.json relation (1:1 / N:1)
     let relation_json = r#"{
         "ownerType": "article",
         "ownerAttr": "author",
@@ -124,7 +144,19 @@ fn setup_sample_schema_dir(temp_dir: &Path) {
     }"#;
     fs::write(relations_dir.join("article-author.json"), relation_json).unwrap();
 
-    // 5. system-config.json
+    // 6. article-tag.json relation (N:M / HasMany)
+    let tag_rel_json = r#"{
+        "ownerType": "article",
+        "ownerAttr": "tags",
+        "ownerKind": "hasMany",
+        "targetType": "tag",
+        "inverse": {
+            "inverseAttr": "articles"
+        }
+    }"#;
+    fs::write(relations_dir.join("article-tag.json"), tag_rel_json).unwrap();
+
+    // 7. system-config.json
     let config_json = r#"{
         "locales": ["en", "uk"],
         "defaultLocale": "en"
@@ -656,4 +688,201 @@ async fn test_validation_and_error_handling() {
         .add_header("Authorization", format!("Bearer {}", ctx.admin_token))
         .await;
     resp.assert_status(StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_relational_mutations_and_read_after_write() {
+    let pool = match get_test_pool().await {
+        Some(p) => p,
+        None => {
+            eprintln!(
+                "Skipping test_relational_mutations_and_read_after_write: DATABASE_URL not set"
+            );
+            return;
+        }
+    };
+    let ctx = setup_test_server(&pool).await;
+
+    // 1. Create authors
+    let resp = ctx
+        .server
+        .post("/api/authors")
+        .add_header("Authorization", format!("Bearer {}", ctx.admin_token))
+        .json(&json!({
+            "name": "Ferris",
+            "email": "ferris@rust-lang.org"
+        }))
+        .await;
+    resp.assert_status(StatusCode::CREATED);
+    let author1_id = resp.json::<serde_json::Value>()["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let resp = ctx
+        .server
+        .post("/api/authors")
+        .add_header("Authorization", format!("Bearer {}", ctx.admin_token))
+        .json(&json!({
+            "name": "Corro",
+            "email": "corro@rust-lang.org"
+        }))
+        .await;
+    resp.assert_status(StatusCode::CREATED);
+    let author2_id = resp.json::<serde_json::Value>()["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // 2. Create tags
+    let resp = ctx
+        .server
+        .post("/api/tags")
+        .add_header("Authorization", format!("Bearer {}", ctx.admin_token))
+        .json(&json!({ "name": "Rust" }))
+        .await;
+    resp.assert_status(StatusCode::CREATED);
+    let tag1_id = resp.json::<serde_json::Value>()["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let resp = ctx
+        .server
+        .post("/api/tags")
+        .add_header("Authorization", format!("Bearer {}", ctx.admin_token))
+        .json(&json!({ "name": "Cloud" }))
+        .await;
+    resp.assert_status(StatusCode::CREATED);
+    let tag2_id = resp.json::<serde_json::Value>()["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // 3. Create article with connect author and read-after-write populate (POST /api/articles?populate=author)
+    let resp = ctx
+        .server
+        .post("/api/articles?populate=author")
+        .add_header("Authorization", format!("Bearer {}", ctx.admin_token))
+        .json(&json!({
+            "title": "Architecting on Aurora DSQL",
+            "slug": "architecting-aurora-dsql",
+            "views": 10,
+            "author": { "connect": [&author1_id] }
+        }))
+        .await;
+    resp.assert_status(StatusCode::CREATED);
+    let created: serde_json::Value = resp.json();
+    let article_id = created["data"]["id"].as_str().unwrap().to_string();
+    assert_eq!(created["data"]["title"], "Architecting on Aurora DSQL");
+    assert_eq!(created["data"]["publication-status"], "draft");
+
+    // Read-after-write verification: author populated in single roundtrip!
+    let populated_authors = created["data"]["author"].as_array().expect("author array");
+    assert_eq!(populated_authors.len(), 1);
+    assert_eq!(populated_authors[0]["id"], author1_id);
+    assert_eq!(populated_authors[0]["name"], "Ferris");
+
+    // 4. Update article with set tags and populate (PUT /api/articles/{id}?populate=tags)
+    let resp = ctx
+        .server
+        .put(&format!("/api/articles/{article_id}?populate=tags"))
+        .add_header("Authorization", format!("Bearer {}", ctx.admin_token))
+        .json(&json!({
+            "tags": { "set": [&tag1_id, &tag2_id] }
+        }))
+        .await;
+    resp.assert_status(StatusCode::OK);
+    let updated: serde_json::Value = resp.json();
+    let populated_tags = updated["data"]["tags"].as_array().expect("tags array");
+    assert_eq!(populated_tags.len(), 2);
+    let tag_ids: Vec<&str> = populated_tags
+        .iter()
+        .map(|t| t["id"].as_str().unwrap())
+        .collect();
+    assert!(tag_ids.contains(&tag1_id.as_str()));
+    assert!(tag_ids.contains(&tag2_id.as_str()));
+
+    // 5. Disconnect tag1 (PUT /api/articles/{id}?populate=tags)
+    let resp = ctx
+        .server
+        .put(&format!("/api/articles/{article_id}?populate=tags"))
+        .add_header("Authorization", format!("Bearer {}", ctx.admin_token))
+        .json(&json!({
+            "tags": { "disconnect": [&tag1_id] }
+        }))
+        .await;
+    resp.assert_status(StatusCode::OK);
+    let updated: serde_json::Value = resp.json();
+    let populated_tags = updated["data"]["tags"].as_array().expect("tags array");
+    assert_eq!(populated_tags.len(), 1);
+    assert_eq!(populated_tags[0]["id"], tag2_id);
+
+    // 6. Unset author via shorthand null (PUT /api/articles/{id}?populate=author)
+    let resp = ctx
+        .server
+        .put(&format!("/api/articles/{article_id}?populate=author"))
+        .add_header("Authorization", format!("Bearer {}", ctx.admin_token))
+        .json(&json!({
+            "author": null
+        }))
+        .await;
+    resp.assert_status(StatusCode::OK);
+    let updated: serde_json::Value = resp.json();
+    let populated_authors = updated["data"]["author"].as_array().expect("author array");
+    assert_eq!(populated_authors.len(), 0);
+
+    // 7. Set author via shorthand UUID string (PUT /api/articles/{id}?populate=author)
+    let resp = ctx
+        .server
+        .put(&format!("/api/articles/{article_id}?populate=author"))
+        .add_header("Authorization", format!("Bearer {}", ctx.admin_token))
+        .json(&json!({
+            "author": &author1_id
+        }))
+        .await;
+    resp.assert_status(StatusCode::OK);
+    let updated: serde_json::Value = resp.json();
+    let populated_authors = updated["data"]["author"].as_array().expect("author array");
+    assert_eq!(populated_authors.len(), 1);
+    assert_eq!(populated_authors[0]["id"], author1_id);
+
+    // 8. Cardinality violation: attempt to connect 2 targets to HasOne relation
+    let resp = ctx
+        .server
+        .put(&format!("/api/articles/{article_id}"))
+        .add_header("Authorization", format!("Bearer {}", ctx.admin_token))
+        .json(&json!({
+            "author": { "set": [&author1_id, &author2_id] }
+        }))
+        .await;
+    resp.assert_status(StatusCode::BAD_REQUEST);
+    let problem: serde_json::Value = resp.json();
+    assert_eq!(problem["title"], "Validation Failed");
+
+    // 9. Publish article and verify relations persist
+    let resp = ctx
+        .server
+        .post(&format!("/api/articles/{article_id}/publish"))
+        .add_header("Authorization", format!("Bearer {}", ctx.admin_token))
+        .await;
+    resp.assert_status(StatusCode::OK);
+
+    // Query published instance with populate
+    let resp = ctx
+        .server
+        .get(&format!("/api/articles/{article_id}?populate=author,tags"))
+        .add_header("Authorization", format!("Bearer {}", ctx.admin_token))
+        .await;
+    resp.assert_status(StatusCode::OK);
+    let published: serde_json::Value = resp.json();
+    assert_eq!(published["data"]["publication-status"], "published");
+    let authors = published["data"]["author"]
+        .as_array()
+        .expect("author array");
+    assert_eq!(authors.len(), 1);
+    assert_eq!(authors[0]["id"], author1_id);
+    let tags = published["data"]["tags"].as_array().expect("tags array");
+    assert_eq!(tags.len(), 1);
+    assert_eq!(tags[0]["id"], tag2_id);
 }

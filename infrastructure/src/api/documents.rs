@@ -15,7 +15,7 @@ use domain::schema::{AttributeId, DocumentKind, DocumentType, DocumentTypeId};
 use uuid::Uuid;
 
 use super::dto::{
-    CollectionResponse, SingleResponse, document_to_json, parse_fields_from_json,
+    CollectionResponse, SingleResponse, document_to_json, parse_payload_from_json,
     string_to_domain_value,
 };
 use super::errors::ApiError;
@@ -161,13 +161,19 @@ pub async fn handle_root_post(
     auth: AuthUser,
     State(state): State<AppState>,
     Path(slug): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> Result<Response, ApiError> {
     if let Some(doc_type) = state.schema_registry.find_type_by_name(&slug)
         && doc_type.kind == DocumentKind::Collection
     {
-        let fields = parse_fields_from_json(&body, doc_type)?;
-        let cmd = CreateDocumentCommand::new(doc_type.id.clone(), fields);
+        let (fields, relations) = parse_payload_from_json(&body, doc_type, &state.schema_registry)?;
+        let populate = parse_populate(&params);
+        let mut cmd =
+            CreateDocumentCommand::new(doc_type.id.clone(), fields).with_relations(relations);
+        if let Some(pop) = populate {
+            cmd = cmd.with_populate(pop);
+        }
         let instance = state.documents_service.create(&auth.caller, cmd).await?;
 
         return Ok((
@@ -197,13 +203,15 @@ pub async fn handle_root_put(
     auth: AuthUser,
     State(state): State<AppState>,
     Path(slug): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> Result<Response, ApiError> {
     if let Ok(type_id) = DocumentTypeId::try_new(&slug)
         && let Some(doc_type) = state.schema_registry.find_type(&type_id)
         && doc_type.kind == DocumentKind::SingleType
     {
-        let fields = parse_fields_from_json(&body, doc_type)?;
+        let (fields, relations) = parse_payload_from_json(&body, doc_type, &state.schema_registry)?;
+        let populate = parse_populate(&params);
 
         // Check if singleton instance already exists
         let (existing, _) = state
@@ -221,7 +229,11 @@ pub async fn handle_root_put(
             .await?;
 
         if let Some(inst) = existing.into_iter().next() {
-            let update_cmd = UpdateDocumentCommand::new(inst.id, type_id, fields);
+            let mut update_cmd =
+                UpdateDocumentCommand::new(inst.id, type_id, fields).with_relations(relations);
+            if let Some(pop) = populate {
+                update_cmd = update_cmd.with_populate(pop);
+            }
             let updated = state
                 .documents_service
                 .update(&auth.caller, update_cmd)
@@ -231,7 +243,11 @@ pub async fn handle_root_put(
                     .into_response(),
             );
         } else {
-            let create_cmd = CreateDocumentCommand::new(type_id, fields);
+            let mut create_cmd =
+                CreateDocumentCommand::new(type_id, fields).with_relations(relations);
+            if let Some(pop) = populate {
+                create_cmd = create_cmd.with_populate(pop);
+            }
             let created = state
                 .documents_service
                 .create(&auth.caller, create_cmd)
@@ -439,6 +455,7 @@ pub async fn handle_collection_put(
     auth: AuthUser,
     State(state): State<AppState>,
     Path((slug, id)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> Result<Response, ApiError> {
     let doc_type = state
@@ -450,8 +467,13 @@ pub async fn handle_collection_put(
         .map_err(|e| ApiError::BadRequest(format!("invalid instance id: {e}")))?;
     let inst_id = DocumentInstanceId::new(uuid);
 
-    let fields = parse_fields_from_json(&body, doc_type)?;
-    let cmd = UpdateDocumentCommand::new(inst_id, doc_type.id.clone(), fields);
+    let (fields, relations) = parse_payload_from_json(&body, doc_type, &state.schema_registry)?;
+    let populate = parse_populate(&params);
+    let mut cmd =
+        UpdateDocumentCommand::new(inst_id, doc_type.id.clone(), fields).with_relations(relations);
+    if let Some(pop) = populate {
+        cmd = cmd.with_populate(pop);
+    }
 
     let updated = state.documents_service.update(&auth.caller, cmd).await?;
 

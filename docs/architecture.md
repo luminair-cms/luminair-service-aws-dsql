@@ -99,4 +99,5 @@ The UI layer is an independent **Decoupled Single-Page Application (SPA)** adher
 - [ADR-008 — Unified Naming Conventions and REST Routing Strategy](./adr/ADR-008-naming-conventions-and-routing.md)
 - [ADR-009 — Dynamic Schema Migration and Relation Persistence](./adr/ADR-009-dynamic-schema-migration-and-relation-persistence.md)
 - [ADR-010 — Admin Dashboard UI Architecture & Implementation Strategy](./adr/ADR-010-ui-architecture.md)
+- [ADR-011 — Relational Mutation Operations and Read-After-Write Command Orchestration](./adr/ADR-011-relational-mutations-and-read-after-write.md)
 

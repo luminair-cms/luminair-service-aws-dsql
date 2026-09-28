@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -52,6 +52,48 @@ impl DocumentInstance {
     ) -> Self {
         self.populated_relations = populated;
         self
+    }
+
+    /// Replaces all relations for the given attribute with the specified target IDs (deduplicated).
+    pub fn set_relations(&mut self, attr: AttributeId, target_ids: Vec<DocumentInstanceId>) {
+        let mut seen = HashSet::new();
+        let mut list = Vec::new();
+        for target_id in target_ids {
+            if seen.insert(target_id) {
+                list.push(ResolvedRelation {
+                    attribute_id: attr.clone(),
+                    target_instance_id: target_id,
+                });
+            }
+        }
+        self.relations.insert(attr, list);
+    }
+
+    /// Appends the specified target IDs to the existing relations for the given attribute, ignoring duplicates.
+    pub fn connect_relations(&mut self, attr: AttributeId, target_ids: Vec<DocumentInstanceId>) {
+        let list = self.relations.entry(attr.clone()).or_default();
+        let mut seen: HashSet<_> = list.iter().map(|r| r.target_instance_id).collect();
+        for target_id in target_ids {
+            if seen.insert(target_id) {
+                list.push(ResolvedRelation {
+                    attribute_id: attr.clone(),
+                    target_instance_id: target_id,
+                });
+            }
+        }
+    }
+
+    /// Removes the specified target IDs from the relations of the given attribute.
+    pub fn disconnect_relations(&mut self, attr: &AttributeId, target_ids: &[DocumentInstanceId]) {
+        if let Some(list) = self.relations.get_mut(attr) {
+            let targets_to_remove: HashSet<_> = target_ids.iter().copied().collect();
+            list.retain(|r| !targets_to_remove.contains(&r.target_instance_id));
+        }
+    }
+
+    /// Clears all relations for the given attribute.
+    pub fn unset_relations(&mut self, attr: &AttributeId) {
+        self.relations.remove(attr);
     }
 
     /// Publishes the document instance, advancing its revision and returning the new revision number.
@@ -287,5 +329,92 @@ mod tests {
         let (instance, _, _) = make_test_instance();
         let other = UserId::try_new("other_user").unwrap();
         assert!(!instance.is_owned_by(&other));
+    }
+
+    #[test]
+    fn test_set_relations_deduplicates_and_replaces() {
+        let (mut instance, _, _) = make_test_instance();
+        let attr = AttributeId::try_new("tags").unwrap();
+        let id1 = DocumentInstanceId::new(Uuid::now_v7());
+        let id2 = DocumentInstanceId::new(Uuid::now_v7());
+
+        // First set
+        instance.set_relations(attr.clone(), vec![id1, id2, id1]);
+        assert_eq!(instance.relations.get(&attr).unwrap().len(), 2);
+        assert_eq!(
+            instance.relations.get(&attr).unwrap()[0].target_instance_id,
+            id1
+        );
+        assert_eq!(
+            instance.relations.get(&attr).unwrap()[1].target_instance_id,
+            id2
+        );
+
+        // Replace with new set
+        let id3 = DocumentInstanceId::new(Uuid::now_v7());
+        instance.set_relations(attr.clone(), vec![id3]);
+        assert_eq!(instance.relations.get(&attr).unwrap().len(), 1);
+        assert_eq!(
+            instance.relations.get(&attr).unwrap()[0].target_instance_id,
+            id3
+        );
+    }
+
+    #[test]
+    fn test_connect_relations_appends_and_skips_duplicates() {
+        let (mut instance, _, _) = make_test_instance();
+        let attr = AttributeId::try_new("tags").unwrap();
+        let id1 = DocumentInstanceId::new(Uuid::now_v7());
+        let id2 = DocumentInstanceId::new(Uuid::now_v7());
+
+        instance.set_relations(attr.clone(), vec![id1]);
+        assert_eq!(instance.relations.get(&attr).unwrap().len(), 1);
+
+        // Connect id2 and duplicate id1
+        instance.connect_relations(attr.clone(), vec![id1, id2]);
+        assert_eq!(instance.relations.get(&attr).unwrap().len(), 2);
+        assert_eq!(
+            instance.relations.get(&attr).unwrap()[0].target_instance_id,
+            id1
+        );
+        assert_eq!(
+            instance.relations.get(&attr).unwrap()[1].target_instance_id,
+            id2
+        );
+    }
+
+    #[test]
+    fn test_disconnect_relations_removes_matching_targets() {
+        let (mut instance, _, _) = make_test_instance();
+        let attr = AttributeId::try_new("tags").unwrap();
+        let id1 = DocumentInstanceId::new(Uuid::now_v7());
+        let id2 = DocumentInstanceId::new(Uuid::now_v7());
+        let id3 = DocumentInstanceId::new(Uuid::now_v7());
+
+        instance.set_relations(attr.clone(), vec![id1, id2, id3]);
+        assert_eq!(instance.relations.get(&attr).unwrap().len(), 3);
+
+        instance.disconnect_relations(&attr, &[id2]);
+        let remaining: Vec<_> = instance
+            .relations
+            .get(&attr)
+            .unwrap()
+            .iter()
+            .map(|r| r.target_instance_id)
+            .collect();
+        assert_eq!(remaining, vec![id1, id3]);
+    }
+
+    #[test]
+    fn test_unset_relations_clears_attribute() {
+        let (mut instance, _, _) = make_test_instance();
+        let attr = AttributeId::try_new("tags").unwrap();
+        let id1 = DocumentInstanceId::new(Uuid::now_v7());
+
+        instance.set_relations(attr.clone(), vec![id1]);
+        assert!(instance.relations.contains_key(&attr));
+
+        instance.unset_relations(&attr);
+        assert!(!instance.relations.contains_key(&attr));
     }
 }

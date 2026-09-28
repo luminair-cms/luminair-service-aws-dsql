@@ -327,6 +327,22 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
   - 100% of workspace tests pass (197 tests: 90 domain, 38 application, 69 infrastructure).
   - Zero warnings on `cargo clippy --workspace --all-targets -- -D warnings`.
 
+## 2026-09-28 — Relational Mutations & Read-After-Write Command Orchestration (ADR-011)
+
+- **Adopted Variant D (Orchestrated Read-After-Write)**:
+  - In `CreateDocumentCommand` and `UpdateDocumentCommand`, support `relations: HashMap<AttributeId, RelationAction>` and `populate: Option<Vec<AttributeId>>`.
+  - Relation actions supported for MVP: `Set(Vec<DocumentInstanceId>)`, `Connect(Vec<DocumentInstanceId>)`, `Disconnect(Vec<DocumentInstanceId>)`, `Unset`.
+  - **MVP Scope Constraint**: Nested document creation is explicitly postponed to Post-MVP; only existing document IDs can be connected/set.
+  - Commands return `DocumentInstance` containing populated relations when `cmd.populate` is specified, enabling single-roundtrip REST responses (RFC 9110 `201`/`200`) and safe TanStack Query cache updates.
+- See: [ADR-011](../../docs/adr/ADR-011-relational-mutations-and-read-after-write.md)
+- **Implementation (Phases 1–5 Complete)**:
+  - Domain: `DocumentInstance` in-memory mutation methods (`set_relations`, `connect_relations`, `disconnect_relations`, `unset_relations`).
+  - Application: `validate_and_apply_relations` in `DocumentsServiceImpl` enforcing schema presence, owner-side restriction, and `HasOne` cardinality. Atomic persistence followed by immediate read-after-write `enrich` query when `populate` is provided.
+  - Infrastructure Persistence: `SqlxDocumentInstanceRepository` synchronizes draft link tables (`_rel_*`) on save and copies to published link tables (`_rel_*__published`) on publish.
+  - Infrastructure API: `parse_payload_from_json` cleanly parses Strapi action objects (`connect`, `disconnect`, `set`, `unset`) and shorthands (UUID string, array of UUIDs, or null) into `ParsedPayload` without confusing relation attributes with scalar fields.
+  - REST Handlers: `handle_root_post`, `handle_root_put`, and `handle_collection_put` extract `Query(params)` to parse `?populate=...` and pass relations/populate to command dispatch.
+  - Tests: End-to-end integration test `test_relational_mutations_and_read_after_write` verifies connect, set, disconnect, unset (null shorthand), set (string shorthand), HasOne cardinality rejection, and persistence across publish in `tests/api_test.rs`.
+
 ---
 
 > **AI agents**: when you make a non-obvious decision during implementation, append an entry here.

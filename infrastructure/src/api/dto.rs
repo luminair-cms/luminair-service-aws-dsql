@@ -3,17 +3,20 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
-use domain::auth::{AccessRequest, AccessRequestStatus};
-use domain::common::{Email, Url};
-use domain::content::{
-    ContentValue, DocumentInstance, DomainValue, PrimitiveValue, PublicationState,
-};
-use domain::schema::{AttributeId, DocumentType, FieldType, PrimitiveType};
-use domain::system::LocaleId;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
+
+use application::commands::documents::RelationAction;
+use domain::auth::{AccessRequest, AccessRequestStatus};
+use domain::common::{Email, Url};
+use domain::content::{
+    ContentValue, DocumentInstance, DocumentInstanceId, DomainValue, PrimitiveValue,
+    PublicationState,
+};
+use domain::schema::{AttributeId, DocumentType, FieldType, PrimitiveType, SchemaRegistry};
+use domain::system::LocaleId;
 
 use super::errors::ApiError;
 
@@ -201,16 +204,144 @@ pub fn content_value_to_json(val: &ContentValue) -> serde_json::Value {
     }
 }
 
-/// Parses request JSON object body into domain `HashMap<AttributeId, ContentValue>`.
-pub fn parse_fields_from_json(
+/// Helper to extract a list of `DocumentInstanceId`s from a JSON value.
+/// Supports:
+/// - A single UUID string: `"0192..."`
+/// - A single object with an "id" field: `{"id": "0192..."}`
+/// - An array of UUID strings or objects with "id": `["0192...", {"id": "0192..."}]`
+pub fn parse_target_ids(val: &serde_json::Value) -> Result<Vec<DocumentInstanceId>, ApiError> {
+    match val {
+        serde_json::Value::String(s) => {
+            let u = Uuid::parse_str(s)
+                .map_err(|e| ApiError::BadRequest(format!("invalid uuid '{s}': {e}")))?;
+            Ok(vec![DocumentInstanceId::new(u)])
+        }
+        serde_json::Value::Object(obj) => {
+            let id_val = obj.get("id").ok_or_else(|| {
+                ApiError::BadRequest("expected 'id' field in relation object".into())
+            })?;
+            let s = id_val
+                .as_str()
+                .ok_or_else(|| ApiError::BadRequest("expected string for relation 'id'".into()))?;
+            let u = Uuid::parse_str(s)
+                .map_err(|e| ApiError::BadRequest(format!("invalid uuid '{s}': {e}")))?;
+            Ok(vec![DocumentInstanceId::new(u)])
+        }
+        serde_json::Value::Array(arr) => {
+            let mut ids = Vec::with_capacity(arr.len());
+            for item in arr {
+                let u = match item {
+                    serde_json::Value::String(s) => Uuid::parse_str(s)
+                        .map_err(|e| ApiError::BadRequest(format!("invalid uuid '{s}': {e}")))?,
+                    serde_json::Value::Object(obj) => {
+                        let id_val = obj.get("id").ok_or_else(|| {
+                            ApiError::BadRequest("expected 'id' field in relation object".into())
+                        })?;
+                        let s = id_val.as_str().ok_or_else(|| {
+                            ApiError::BadRequest("expected string for relation 'id'".into())
+                        })?;
+                        Uuid::parse_str(s)
+                            .map_err(|e| ApiError::BadRequest(format!("invalid uuid '{s}': {e}")))?
+                    }
+                    _ => {
+                        return Err(ApiError::BadRequest(
+                            "expected string or object with 'id' for relation item".into(),
+                        ));
+                    }
+                };
+                ids.push(DocumentInstanceId::new(u));
+            }
+            Ok(ids)
+        }
+        _ => Err(ApiError::BadRequest(
+            "expected string, object with 'id', or array of IDs for relation".into(),
+        )),
+    }
+}
+
+/// Parses a relational mutation action from a JSON value.
+/// Supports Strapi action objects (`connect`, `disconnect`, `set`, `unset`)
+/// as well as shorthands (UUID string, array of UUIDs, or null).
+pub fn parse_relation_action(val: &serde_json::Value) -> Result<RelationAction, ApiError> {
+    if val.is_null() {
+        return Ok(RelationAction::Unset);
+    }
+
+    match val {
+        serde_json::Value::String(_) | serde_json::Value::Array(_) => {
+            let ids = parse_target_ids(val)?;
+            Ok(RelationAction::Set(ids))
+        }
+        serde_json::Value::Object(map) => {
+            let known_keys: Vec<&str> = ["connect", "disconnect", "set", "unset"]
+                .into_iter()
+                .filter(|k| map.contains_key(*k))
+                .collect();
+
+            if known_keys.len() > 1 {
+                return Err(ApiError::BadRequest(format!(
+                    "multiple relation actions specified ({known_keys:?}); specify at most one action per relation attribute"
+                )));
+            }
+
+            if let Some(action_name) = known_keys.first() {
+                match *action_name {
+                    "connect" => {
+                        let ids = parse_target_ids(&map["connect"])?;
+                        Ok(RelationAction::Connect(ids))
+                    }
+                    "disconnect" => {
+                        let ids = parse_target_ids(&map["disconnect"])?;
+                        Ok(RelationAction::Disconnect(ids))
+                    }
+                    "set" => {
+                        let ids = parse_target_ids(&map["set"])?;
+                        Ok(RelationAction::Set(ids))
+                    }
+                    "unset" => {
+                        if map["unset"].as_bool() == Some(true) {
+                            Ok(RelationAction::Unset)
+                        } else {
+                            Err(ApiError::BadRequest(
+                                "'unset' must be set to true (e.g. {\"unset\": true})".into(),
+                            ))
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            } else if map.contains_key("id") {
+                let ids = parse_target_ids(val)?;
+                Ok(RelationAction::Set(ids))
+            } else {
+                Err(ApiError::BadRequest(
+                    "invalid relation action: expected 'connect', 'disconnect', 'set', 'unset', or shorthand target ID".into(),
+                ))
+            }
+        }
+        _ => Err(ApiError::BadRequest(
+            "invalid relation format: expected object, string UUID, array of UUIDs, or null".into(),
+        )),
+    }
+}
+
+/// Parsed representation of document write payloads containing scalar fields and relational actions.
+pub type ParsedPayload = (
+    HashMap<AttributeId, ContentValue>,
+    HashMap<AttributeId, RelationAction>,
+);
+
+/// Parses request JSON object body into scalar fields and relational actions.
+pub fn parse_payload_from_json(
     body: &serde_json::Value,
     doc_type: &DocumentType,
-) -> Result<HashMap<AttributeId, ContentValue>, ApiError> {
+    schema_reg: &SchemaRegistry,
+) -> Result<ParsedPayload, ApiError> {
     let obj = body
         .as_object()
         .ok_or_else(|| ApiError::BadRequest("Request body must be a JSON object".into()))?;
 
     let mut fields = HashMap::new();
+    let mut relations = HashMap::new();
 
     for (k, v) in obj {
         // Skip metadata fields that might be passed in payloads
@@ -228,12 +359,28 @@ pub fn parse_fields_from_json(
         if let Some(field_def) = doc_type.fields.get(&attr_id) {
             let content_val = json_to_content_value(v, &field_def.field_type)?;
             fields.insert(attr_id, content_val);
+        } else if schema_reg
+            .find_relation_for_attr(&doc_type.id, &attr_id)
+            .is_some()
+        {
+            let action = parse_relation_action(v)?;
+            relations.insert(attr_id, action);
         } else {
             // Include unrecognized attribute so SchemaRegistry::validate_content can reject with domain error
             fields.insert(attr_id, ContentValue::Null);
         }
     }
 
+    Ok((fields, relations))
+}
+
+/// Parses request JSON object body into domain `HashMap<AttributeId, ContentValue>`.
+pub fn parse_fields_from_json(
+    body: &serde_json::Value,
+    doc_type: &DocumentType,
+) -> Result<HashMap<AttributeId, ContentValue>, ApiError> {
+    let empty_reg = SchemaRegistry::default();
+    let (fields, _) = parse_payload_from_json(body, doc_type, &empty_reg)?;
     Ok(fields)
 }
 
@@ -479,4 +626,193 @@ pub fn document_type_to_json(doc_type: &DocumentType) -> serde_json::Value {
         },
         "attributes": attr_map
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use domain::schema::{
+        DocumentKind, DocumentTypeId, DocumentTypeInfo, DocumentTypeOptions, FieldDefinition,
+        OwnerRelationKind, Relation,
+    };
+    use indexmap::IndexSet;
+
+    #[test]
+    fn test_parse_target_ids_formats() {
+        let u1 = Uuid::now_v7();
+        let u2 = Uuid::now_v7();
+
+        // 1. Single string UUID
+        let single_str = json!(u1.to_string());
+        let res = parse_target_ids(&single_str).unwrap();
+        assert_eq!(res, vec![DocumentInstanceId::new(u1)]);
+
+        // 2. Single object with "id"
+        let single_obj = json!({ "id": u1.to_string() });
+        let res = parse_target_ids(&single_obj).unwrap();
+        assert_eq!(res, vec![DocumentInstanceId::new(u1)]);
+
+        // 3. Array of strings and objects
+        let arr = json!([u1.to_string(), { "id": u2.to_string() }]);
+        let res = parse_target_ids(&arr).unwrap();
+        assert_eq!(
+            res,
+            vec![DocumentInstanceId::new(u1), DocumentInstanceId::new(u2)]
+        );
+
+        // 4. Invalid UUID
+        let invalid = json!("not-a-uuid");
+        assert!(parse_target_ids(&invalid).is_err());
+
+        // 5. Object missing "id"
+        let missing_id = json!({ "name": "something" });
+        assert!(parse_target_ids(&missing_id).is_err());
+    }
+
+    #[test]
+    fn test_parse_relation_actions() {
+        let u1 = Uuid::now_v7();
+        let u2 = Uuid::now_v7();
+
+        // Connect
+        let connect_val = json!({ "connect": [u1.to_string()] });
+        assert_eq!(
+            parse_relation_action(&connect_val).unwrap(),
+            RelationAction::Connect(vec![DocumentInstanceId::new(u1)])
+        );
+
+        // Disconnect
+        let disc_val = json!({ "disconnect": [u1.to_string()] });
+        assert_eq!(
+            parse_relation_action(&disc_val).unwrap(),
+            RelationAction::Disconnect(vec![DocumentInstanceId::new(u1)])
+        );
+
+        // Set
+        let set_val = json!({ "set": [u1.to_string(), u2.to_string()] });
+        assert_eq!(
+            parse_relation_action(&set_val).unwrap(),
+            RelationAction::Set(vec![
+                DocumentInstanceId::new(u1),
+                DocumentInstanceId::new(u2)
+            ])
+        );
+
+        // Unset
+        let unset_val = json!({ "unset": true });
+        assert_eq!(
+            parse_relation_action(&unset_val).unwrap(),
+            RelationAction::Unset
+        );
+
+        let invalid_unset = json!({ "unset": false });
+        assert!(parse_relation_action(&invalid_unset).is_err());
+
+        // Shorthands
+        assert_eq!(
+            parse_relation_action(&serde_json::Value::Null).unwrap(),
+            RelationAction::Unset
+        );
+
+        let shorthand_single = json!(u1.to_string());
+        assert_eq!(
+            parse_relation_action(&shorthand_single).unwrap(),
+            RelationAction::Set(vec![DocumentInstanceId::new(u1)])
+        );
+
+        let shorthand_arr = json!([u1.to_string()]);
+        assert_eq!(
+            parse_relation_action(&shorthand_arr).unwrap(),
+            RelationAction::Set(vec![DocumentInstanceId::new(u1)])
+        );
+
+        let shorthand_obj = json!({ "id": u1.to_string() });
+        assert_eq!(
+            parse_relation_action(&shorthand_obj).unwrap(),
+            RelationAction::Set(vec![DocumentInstanceId::new(u1)])
+        );
+
+        // Multiple actions rejected
+        let conflict = json!({
+            "connect": [u1.to_string()],
+            "disconnect": [u2.to_string()]
+        });
+        assert!(parse_relation_action(&conflict).is_err());
+    }
+
+    #[test]
+    fn test_parse_payload_separates_fields_and_relations() {
+        let type_id = DocumentTypeId::try_new("article").unwrap();
+        let target_type_id = DocumentTypeId::try_new("tag").unwrap();
+        let title_attr = AttributeId::try_new("title").unwrap();
+        let tags_attr = AttributeId::try_new("tags").unwrap();
+
+        let mut fields = IndexSet::new();
+        fields.insert(FieldDefinition {
+            id: title_attr.clone(),
+            field_type: FieldType::Primitive(PrimitiveType::Text),
+            required: true,
+            unique: false,
+            constraints: vec![],
+        });
+
+        let doc_type = DocumentType {
+            id: type_id.clone(),
+            kind: DocumentKind::Collection,
+            info: DocumentTypeInfo {
+                title: "Article".into(),
+                singular_name: "article".into(),
+                plural_name: "articles".into(),
+                description: None,
+            },
+            options: DocumentTypeOptions {
+                draft_and_publish: true,
+            },
+            fields,
+        };
+
+        let relation = Relation {
+            id: domain::schema::RelationId::derive(&type_id, &tags_attr),
+            owner_type: type_id.clone(),
+            owner_attr: tags_attr.clone(),
+            owner_kind: OwnerRelationKind::HasMany,
+            target_type: target_type_id,
+            inverse: None,
+        };
+
+        let schema_reg = SchemaRegistry::new(vec![doc_type.clone()], vec![relation]);
+
+        let tag_id = Uuid::now_v7();
+        let payload = json!({
+            "id": "ignored-id",
+            "publication-status": "draft",
+            "title": "Rust in Action",
+            "tags": { "connect": [tag_id.to_string()] },
+            "unknown-field": "value"
+        });
+
+        let (parsed_fields, parsed_relations) =
+            parse_payload_from_json(&payload, &doc_type, &schema_reg).unwrap();
+
+        // 1. Scalar field 'title' correctly parsed
+        assert!(parsed_fields.contains_key(&title_attr));
+        match parsed_fields.get(&title_attr).unwrap() {
+            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text(s))) => {
+                assert_eq!(s, "Rust in Action");
+            }
+            other => panic!("unexpected value: {other:?}"),
+        }
+
+        // 2. Relation 'tags' correctly separated into parsed_relations
+        assert!(!parsed_fields.contains_key(&tags_attr));
+        assert!(parsed_relations.contains_key(&tags_attr));
+        assert_eq!(
+            parsed_relations.get(&tags_attr).unwrap(),
+            &RelationAction::Connect(vec![DocumentInstanceId::new(tag_id)])
+        );
+
+        // 3. Unknown field placed into fields as Null so domain validator can reject it
+        let unknown_attr = AttributeId::try_new("unknown-field").unwrap();
+        assert_eq!(parsed_fields.get(&unknown_attr), Some(&ContentValue::Null));
+    }
 }
