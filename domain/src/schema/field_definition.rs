@@ -7,40 +7,6 @@ use serde::{Deserialize, Serialize};
 use super::ids::AttributeId;
 use super::types::{FieldType, PrimitiveType};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum FieldConstraint {
-    Pattern(String),
-    MinLength(usize),
-    MaxLength(usize),
-    MinInteger(i64),
-    MaxInteger(i64),
-    MinDecimal(Decimal),
-    MaxDecimal(Decimal),
-}
-
-impl FieldConstraint {
-    pub fn is_applicable_for(&self, ft: &FieldType) -> bool {
-        match self {
-            FieldConstraint::Pattern(_) => matches!(
-                ft,
-                FieldType::Primitive(PrimitiveType::Text | PrimitiveType::Uid)
-                    | FieldType::LocalizedText
-            ),
-            FieldConstraint::MinLength(_) | FieldConstraint::MaxLength(_) => matches!(
-                ft,
-                FieldType::Primitive(PrimitiveType::Text | PrimitiveType::Uid)
-                    | FieldType::LocalizedText
-            ),
-            FieldConstraint::MinInteger(_) | FieldConstraint::MaxInteger(_) => {
-                matches!(ft, FieldType::Primitive(PrimitiveType::Integer(_)))
-            }
-            FieldConstraint::MinDecimal(_) | FieldConstraint::MaxDecimal(_) => {
-                matches!(ft, FieldType::Primitive(PrimitiveType::Decimal { .. }))
-            }
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldDefinition {
     pub id: AttributeId,
@@ -73,6 +39,40 @@ impl Borrow<AttributeId> for FieldDefinition {
 impl Borrow<str> for FieldDefinition {
     fn borrow(&self) -> &str {
         self.id.as_ref()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FieldConstraint {
+    Pattern(String),
+    MinLength(usize),
+    MaxLength(usize),
+    MinInteger(i64),
+    MaxInteger(i64),
+    MinDecimal(Decimal),
+    MaxDecimal(Decimal),
+}
+
+impl FieldConstraint {
+    pub fn is_applicable_for(&self, ft: &FieldType) -> bool {
+        match self {
+            FieldConstraint::Pattern(_) => matches!(
+                ft,
+                FieldType::Primitive(PrimitiveType::Text | PrimitiveType::Uid)
+                    | FieldType::LocalizedText
+            ),
+            FieldConstraint::MinLength(_) | FieldConstraint::MaxLength(_) => matches!(
+                ft,
+                FieldType::Primitive(PrimitiveType::Text | PrimitiveType::Uid)
+                    | FieldType::LocalizedText
+            ),
+            FieldConstraint::MinInteger(_) | FieldConstraint::MaxInteger(_) => {
+                matches!(ft, FieldType::Primitive(PrimitiveType::Integer(_)))
+            }
+            FieldConstraint::MinDecimal(_) | FieldConstraint::MaxDecimal(_) => {
+                matches!(ft, FieldType::Primitive(PrimitiveType::Decimal { .. }))
+            }
+        }
     }
 }
 

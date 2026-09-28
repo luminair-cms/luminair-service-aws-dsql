@@ -12,6 +12,7 @@ use domain::auth::{
     AccessRequest, AccessRequestRepository, RoleId, UserId, UserRoleAssignment,
     UserRoleAssignmentId, UserRoleAssignmentRepository,
 };
+use domain::common::{DisplayName, Email};
 use infrastructure::auth::{
     AuthAppState, AuthConfig, AuthUser, AuthenticatedClaims, Claims, MockTokenValidator,
     SecretTokenValidator, SqlxShadowUserRepository, TokenValidator, run_bootstrap,
@@ -345,8 +346,8 @@ async fn test_axum_auth_extractors_end_to_end() {
     let user_id = UserId::try_new(&new_user_sub).unwrap();
     let req = AccessRequest::new(
         user_id.clone(),
-        Some("newuser@example.com".into()),
-        Some("New User".into()),
+        Email::try_new("newuser@example.com").ok(),
+        DisplayName::try_new("New User").ok(),
         Utc::now(),
     );
     access_repo.save(&req).await.unwrap();

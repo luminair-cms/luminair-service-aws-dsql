@@ -49,10 +49,6 @@ pub fn create_router(state: AppState) -> Router {
             "/api/{slug}/unpublish",
             post(documents::handle_singleton_unpublish),
         )
-        .route(
-            "/api/{slug}/snapshots",
-            get(documents::handle_singleton_snapshots),
-        )
         // Collection item endpoints
         .route(
             "/api/{slug}/{id}",
@@ -67,10 +63,6 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/api/{slug}/{id}/unpublish",
             post(documents::handle_collection_unpublish),
-        )
-        .route(
-            "/api/{slug}/{id}/snapshots",
-            get(documents::handle_collection_snapshots),
         )
         .with_state(state)
 }

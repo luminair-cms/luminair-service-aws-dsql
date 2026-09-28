@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc};
 use domain::auth::{
     AccessRequest, AccessRequestId, AccessRequestRepository, AccessRequestStatus, RoleId, UserId,
 };
+use domain::common::{DisplayName, Email};
 use domain::errors::DomainError;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -47,8 +48,8 @@ fn status_from_db(
 fn map_row_to_access_request(row: sqlx::postgres::PgRow) -> Result<AccessRequest, DomainError> {
     let id: Uuid = row.get("id");
     let user_id: String = row.get("user_id");
-    let email: Option<String> = row.get("email");
-    let name: Option<String> = row.get("name");
+    let email_raw: Option<String> = row.get("email");
+    let name_raw: Option<String> = row.get("name");
     let requested_at: DateTime<Utc> = row.get("requested_at");
     let status_str: String = row.get("status");
     let rejection_reason: Option<String> = row.get("rejection_reason");
@@ -58,6 +59,13 @@ fn map_row_to_access_request(row: sqlx::postgres::PgRow) -> Result<AccessRequest
 
     let assigned_roles = serde_json::from_value::<Vec<RoleId>>(assigned_roles_value)
         .map_err(|e| DomainError::Storage(format!("failed to deserialize assigned_roles: {e}")))?;
+
+    let email = email_raw
+        .map(|s| Email::try_new(s).map_err(|e| DomainError::Storage(e.to_string())))
+        .transpose()?;
+    let name = name_raw
+        .map(|s| DisplayName::try_new(s).map_err(|e| DomainError::Storage(e.to_string())))
+        .transpose()?;
 
     Ok(AccessRequest {
         id: AccessRequestId::new(id),
@@ -154,6 +162,8 @@ impl AccessRequestRepository for SqlxAccessRequestRepository {
         async move {
             let id = *request.id.as_ref();
             let user_id = request.user_id.as_ref();
+            let email = request.email.as_ref().map(|e| e.as_ref());
+            let name = request.name.as_ref().map(|n| n.as_ref());
             let (status, reason) = status_to_db(&request.status);
             let reviewed_by = request.reviewed_by.as_ref().map(|u| u.as_ref());
             let assigned_roles_json =
@@ -178,8 +188,8 @@ impl AccessRequestRepository for SqlxAccessRequestRepository {
             )
             .bind(id)
             .bind(user_id)
-            .bind(&request.email)
-            .bind(&request.name)
+            .bind(email)
+            .bind(name)
             .bind(request.requested_at)
             .bind(status)
             .bind(reason)

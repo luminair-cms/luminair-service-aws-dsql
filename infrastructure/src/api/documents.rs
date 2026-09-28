@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use application::commands::documents::{
     CreateDocumentCommand, DeleteDocumentCommand, FindByIdCommand, FindDocumentsCommand,
-    ListSnapshotsCommand, PublishDocumentCommand, UnpublishDocumentCommand, UpdateDocumentCommand,
+    PublishDocumentCommand, UnpublishDocumentCommand, UpdateDocumentCommand,
 };
 use application::services::documents::DocumentsService;
 use axum::extract::{Path, Query, State};
@@ -15,7 +15,7 @@ use domain::schema::{AttributeId, DocumentKind, DocumentType, DocumentTypeId};
 use uuid::Uuid;
 
 use super::dto::{
-    CollectionResponse, SingleResponse, document_to_json, parse_fields_from_json, snapshot_to_json,
+    CollectionResponse, SingleResponse, document_to_json, parse_fields_from_json,
     string_to_domain_value,
 };
 use super::errors::ApiError;
@@ -341,12 +341,12 @@ pub async fn handle_singleton_publish(
         ApiError::NotFound(format!("singleton '{slug}' has no content to publish"))
     })?;
 
-    let snapshot = state
+    let updated = state
         .documents_service
         .publish(&auth.caller, PublishDocumentCommand::new(inst.id, type_id))
         .await?;
 
-    Ok(axum::Json(SingleResponse::new(snapshot_to_json(&snapshot, doc_type))).into_response())
+    Ok(axum::Json(SingleResponse::new(document_to_json(&updated, doc_type))).into_response())
 }
 
 /// Unpublishes the singleton instance for a single-type.
@@ -395,57 +395,6 @@ pub async fn handle_singleton_unpublish(
         .await?;
 
     Ok(axum::Json(SingleResponse::new(document_to_json(&updated, doc_type))).into_response())
-}
-
-/// Lists published snapshots for a singleton instance.
-pub async fn handle_singleton_snapshots(
-    auth: AuthUser,
-    State(state): State<AppState>,
-    Path(slug): Path<String>,
-) -> Result<Response, ApiError> {
-    let type_id = DocumentTypeId::try_new(&slug)
-        .map_err(|_| ApiError::NotFound(format!("document type '{slug}' was not found")))?;
-    let doc_type = state
-        .schema_registry
-        .find_type(&type_id)
-        .ok_or_else(|| ApiError::NotFound(format!("document type '{slug}' was not found")))?;
-
-    if doc_type.kind != DocumentKind::SingleType {
-        return Err(ApiError::BadRequest(format!(
-            "'{slug}' is a collection; use GET /api/{slug}/{{id}}/snapshots"
-        )));
-    }
-
-    let (existing, _) = state
-        .documents_service
-        .find(
-            &auth.caller,
-            FindDocumentsCommand::new(
-                type_id.clone(),
-                Pagination {
-                    page: 1,
-                    page_size: 1,
-                },
-            ),
-        )
-        .await?;
-
-    let inst = existing
-        .into_iter()
-        .next()
-        .ok_or_else(|| ApiError::NotFound(format!("singleton '{slug}' has no content yet")))?;
-
-    let snapshots = state
-        .documents_service
-        .list_snapshots(&auth.caller, ListSnapshotsCommand::new(type_id, inst.id))
-        .await?;
-
-    let items: Vec<serde_json::Value> = snapshots
-        .iter()
-        .map(|s| snapshot_to_json(s, doc_type))
-        .collect();
-
-    Ok(axum::Json(SingleResponse::new(items)).into_response())
 }
 
 // ----------------------------------------------------------------------------
@@ -546,9 +495,9 @@ pub async fn handle_collection_publish(
     let inst_id = DocumentInstanceId::new(uuid);
 
     let cmd = PublishDocumentCommand::new(inst_id, doc_type.id.clone());
-    let snapshot = state.documents_service.publish(&auth.caller, cmd).await?;
+    let updated = state.documents_service.publish(&auth.caller, cmd).await?;
 
-    Ok(axum::Json(SingleResponse::new(snapshot_to_json(&snapshot, doc_type))).into_response())
+    Ok(axum::Json(SingleResponse::new(document_to_json(&updated, doc_type))).into_response())
 }
 
 /// Unpublishes a collection document instance by UUID.
@@ -570,33 +519,4 @@ pub async fn handle_collection_unpublish(
     let updated = state.documents_service.unpublish(&auth.caller, cmd).await?;
 
     Ok(axum::Json(SingleResponse::new(document_to_json(&updated, doc_type))).into_response())
-}
-
-/// Lists published snapshots for a collection document instance.
-pub async fn handle_collection_snapshots(
-    auth: AuthUser,
-    State(state): State<AppState>,
-    Path((slug, id)): Path<(String, String)>,
-) -> Result<Response, ApiError> {
-    let doc_type = state
-        .schema_registry
-        .find_type_by_name(&slug)
-        .ok_or_else(|| ApiError::NotFound(format!("collection '{slug}' was not found")))?;
-
-    let uuid = Uuid::parse_str(&id)
-        .map_err(|e| ApiError::BadRequest(format!("invalid instance id: {e}")))?;
-    let inst_id = DocumentInstanceId::new(uuid);
-
-    let cmd = ListSnapshotsCommand::new(doc_type.id.clone(), inst_id);
-    let snapshots = state
-        .documents_service
-        .list_snapshots(&auth.caller, cmd)
-        .await?;
-
-    let items: Vec<serde_json::Value> = snapshots
-        .iter()
-        .map(|s| snapshot_to_json(s, doc_type))
-        .collect();
-
-    Ok(axum::Json(SingleResponse::new(items)).into_response())
 }

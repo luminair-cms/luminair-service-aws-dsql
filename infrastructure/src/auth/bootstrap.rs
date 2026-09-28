@@ -5,6 +5,7 @@ use domain::auth::{
     AccessRequest, AccessRequestId, AccessRequestRepository, AccessRequestStatus, RoleId, UserId,
     UserRoleAssignment, UserRoleAssignmentId, UserRoleAssignmentRepository,
 };
+use domain::common::DisplayName;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -84,7 +85,7 @@ where
             id: AccessRequestId::new(Uuid::now_v7()),
             user_id: admin_user_id.clone(),
             email: None,
-            name: Some("Bootstrap Admin".to_string()),
+            name: DisplayName::try_new("Bootstrap Admin").ok(),
             requested_at: Utc::now(),
             status: AccessRequestStatus::Approved,
             reviewed_by: Some(admin_user_id.clone()),

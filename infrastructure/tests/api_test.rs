@@ -486,9 +486,9 @@ async fn test_collection_crud_and_publishing_workflows() {
         .add_header("Authorization", format!("Bearer {}", ctx.admin_token))
         .await;
     resp.assert_status(StatusCode::OK);
-    let published_snapshot: serde_json::Value = resp.json();
-    assert_eq!(published_snapshot["data"]["revision"], 1);
-    assert_eq!(published_snapshot["data"]["document-id"], article_id);
+    let published_doc: serde_json::Value = resp.json();
+    assert_eq!(published_doc["data"]["publication-status"], "published");
+    assert_eq!(published_doc["data"]["id"], article_id);
 
     // Verify instance now shows publication-status: published
     let resp = ctx
@@ -499,18 +499,7 @@ async fn test_collection_crud_and_publishing_workflows() {
     let article_now: serde_json::Value = resp.json();
     assert_eq!(article_now["data"]["publication-status"], "published");
 
-    // 7. List snapshot history (GET /api/articles/{id}/snapshots)
-    let resp = ctx
-        .server
-        .get(&format!("/api/articles/{article_id}/snapshots"))
-        .add_header("Authorization", format!("Bearer {}", ctx.admin_token))
-        .await;
-    resp.assert_status(StatusCode::OK);
-    let snapshots_list: serde_json::Value = resp.json();
-    assert_eq!(snapshots_list["data"].as_array().unwrap().len(), 1);
-    assert_eq!(snapshots_list["data"][0]["revision"], 1);
-
-    // 8. Unpublish article (POST /api/articles/{id}/unpublish)
+    // 7. Unpublish article (POST /api/articles/{id}/unpublish)
     let resp = ctx
         .server
         .post(&format!("/api/articles/{article_id}/unpublish"))
@@ -602,20 +591,10 @@ async fn test_singleton_crud_and_publishing_workflows() {
         .add_header("Authorization", format!("Bearer {}", ctx.admin_token))
         .await;
     resp.assert_status(StatusCode::OK);
-    let published_snapshot: serde_json::Value = resp.json();
-    assert_eq!(published_snapshot["data"]["revision"], 1);
+    let published: serde_json::Value = resp.json();
+    assert_eq!(published["data"]["publication-status"], "published");
 
-    // 6. Inspect singleton snapshots (GET /api/homepage/snapshots)
-    let resp = ctx
-        .server
-        .get("/api/homepage/snapshots")
-        .add_header("Authorization", format!("Bearer {}", ctx.admin_token))
-        .await;
-    resp.assert_status(StatusCode::OK);
-    let snapshots: serde_json::Value = resp.json();
-    assert_eq!(snapshots["data"].as_array().unwrap().len(), 1);
-
-    // 7. Unpublish singleton (POST /api/homepage/unpublish)
+    // 6. Unpublish singleton (POST /api/homepage/unpublish)
     let resp = ctx
         .server
         .post("/api/homepage/unpublish")

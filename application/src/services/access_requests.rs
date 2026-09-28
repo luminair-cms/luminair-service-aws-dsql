@@ -192,6 +192,7 @@ mod tests {
     use std::sync::Arc;
 
     use domain::auth::{AccessRequestStatus, Role, RoleId, UserId};
+    use domain::common::{DisplayName, Email};
     use uuid::Uuid;
 
     use crate::test_support::{
@@ -232,8 +233,8 @@ mod tests {
         let req = service
             .submit(SubmitAccessRequestCommand::new(
                 user.clone(),
-                Some("new@example.com".into()),
-                Some("New User".into()),
+                Email::try_new("new@example.com").ok(),
+                DisplayName::try_new("New User").ok(),
             ))
             .await
             .expect("submit success");

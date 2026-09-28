@@ -8,7 +8,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use domain::auth::{AccessRequestId, RoleId};
-use domain::common::Email;
+use domain::common::{DisplayName, Email};
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
@@ -43,7 +43,7 @@ pub async fn submit(
 ) -> Result<Response, ApiError> {
     let user_id = claims.user_id()?;
 
-    let (email, name) = match body {
+    let (raw_email, raw_name) = match body {
         Some(axum::Json(b)) => (
             b.email.or(claims.email.clone()),
             b.name.or(claims.name.clone()),
@@ -51,9 +51,21 @@ pub async fn submit(
         None => (claims.email.clone(), claims.name.clone()),
     };
 
-    if let Some(ref e) = email {
-        Email::try_new(e).map_err(|err| ApiError::BadRequest(format!("invalid email: {err}")))?;
-    }
+    let email = match raw_email {
+        Some(e) => Some(
+            Email::try_new(e)
+                .map_err(|err| ApiError::BadRequest(format!("invalid email: {err}")))?,
+        ),
+        None => None,
+    };
+
+    let name = match raw_name {
+        Some(n) => Some(
+            DisplayName::try_new(n)
+                .map_err(|err| ApiError::BadRequest(format!("invalid name: {err}")))?,
+        ),
+        None => None,
+    };
 
     let cmd = SubmitAccessRequestCommand {
         user_id,

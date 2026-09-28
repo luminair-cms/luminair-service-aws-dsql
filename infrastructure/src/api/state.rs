@@ -13,7 +13,7 @@ use sqlx::PgPool;
 use crate::auth::AuthAppState;
 use crate::repositories::{
     SqlxAccessRequestRepository, SqlxDocumentInstanceRepository, SqlxRoleRepository,
-    SqlxSnapshotRepository, SqlxUserRoleAssignmentRepository,
+    SqlxUserRoleAssignmentRepository,
 };
 
 /// Global application state shared across all HTTP routes.
@@ -23,8 +23,7 @@ pub struct AppState {
     pub pool: PgPool,
     pub schema_registry: Arc<SchemaRegistry>,
     pub system_config: Arc<SystemConfig>,
-    pub documents_service:
-        Arc<DocumentsServiceImpl<SqlxDocumentInstanceRepository, SqlxSnapshotRepository>>,
+    pub documents_service: Arc<DocumentsServiceImpl<SqlxDocumentInstanceRepository>>,
     pub access_requests_service: Arc<
         AccessRequestsServiceImpl<
             SqlxAccessRequestRepository,
@@ -46,14 +45,9 @@ impl AppState {
             pool.clone(),
             schema_registry.clone(),
         ));
-        let snapshot_repo = Arc::new(SqlxSnapshotRepository::new(
-            pool.clone(),
-            schema_registry.clone(),
-        ));
 
         let documents_service = Arc::new(DocumentsServiceImpl::new(
             instance_repo,
-            snapshot_repo,
             schema_registry.clone(),
             system_config.clone(),
         ));

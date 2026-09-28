@@ -6,10 +6,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use domain::auth::Permission;
-use domain::content::{
-    DocumentInstance, DocumentInstanceId, DocumentInstanceRepository, PublishedSnapshot,
-    SnapshotRepository,
-};
+use domain::content::{DocumentInstance, DocumentInstanceId, DocumentInstanceRepository};
 use domain::errors::DomainError;
 use domain::schema::{AttributeId, DocumentKind, DocumentTypeId, SchemaRegistry};
 use domain::system::SystemConfig;
@@ -55,12 +52,12 @@ pub trait DocumentsService: Send + Sync + 'static {
         cmd: DeleteDocumentCommand,
     ) -> impl Future<Output = Result<(), ApplicationError>> + Send;
 
-    /// Publishes a draft document instance and persists an immutable snapshot.
+    /// Publishes a draft document instance.
     fn publish(
         &self,
         caller: &CallerContext,
         cmd: PublishDocumentCommand,
-    ) -> impl Future<Output = Result<PublishedSnapshot, ApplicationError>> + Send;
+    ) -> impl Future<Output = Result<DocumentInstance, ApplicationError>> + Send;
 
     /// Reverts a published document instance back to draft state.
     fn unpublish(
@@ -68,37 +65,26 @@ pub trait DocumentsService: Send + Sync + 'static {
         caller: &CallerContext,
         cmd: UnpublishDocumentCommand,
     ) -> impl Future<Output = Result<DocumentInstance, ApplicationError>> + Send;
-
-    /// Lists all published snapshots (revision history) for a document instance.
-    fn list_snapshots(
-        &self,
-        caller: &CallerContext,
-        cmd: ListSnapshotsCommand,
-    ) -> impl Future<Output = Result<Vec<PublishedSnapshot>, ApplicationError>> + Send;
 }
 
 /// Generic implementation of `DocumentsService` monomorphized over repository adapters.
-pub struct DocumentsServiceImpl<R, S> {
+pub struct DocumentsServiceImpl<R> {
     pub instance_repo: Arc<R>,
-    pub snapshot_repo: Arc<S>,
     pub schema_registry: Arc<SchemaRegistry>,
     pub system_config: Arc<SystemConfig>,
 }
 
-impl<R, S> DocumentsServiceImpl<R, S>
+impl<R> DocumentsServiceImpl<R>
 where
     R: DocumentInstanceRepository + 'static,
-    S: SnapshotRepository + 'static,
 {
     pub fn new(
         instance_repo: Arc<R>,
-        snapshot_repo: Arc<S>,
         schema_registry: Arc<SchemaRegistry>,
         system_config: Arc<SystemConfig>,
     ) -> Self {
         Self {
             instance_repo,
-            snapshot_repo,
             schema_registry,
             system_config,
         }
@@ -150,10 +136,9 @@ where
     }
 }
 
-impl<R, S> DocumentsService for DocumentsServiceImpl<R, S>
+impl<R> DocumentsService for DocumentsServiceImpl<R>
 where
     R: DocumentInstanceRepository + 'static,
-    S: SnapshotRepository + 'static,
 {
     async fn find(
         &self,
@@ -258,9 +243,9 @@ where
         );
         instance.content.fields = cmd.fields;
 
-        // Content & locale validation — return ALL errors (R6)
+        // Schema constraint and required field validation
         if let Err(errs) = self.schema_registry.validate_content(
-            &cmd.document_type,
+            &instance.document_type_id,
             &instance.content,
             &self.system_config,
         ) {
@@ -290,13 +275,14 @@ where
             Some(&instance),
         )?;
 
-        // Update fields and touch
-        for (attr_id, val) in cmd.fields {
-            instance.content.fields.insert(attr_id, val);
+        // Apply updated fields
+        for (attr, val) in cmd.fields {
+            instance.content.fields.insert(attr, val);
         }
+
         instance.touch(Some(caller.user_id.clone()), Utc::now());
 
-        // Validate updated content — return ALL errors (R6)
+        // Revalidate against schema constraints
         if let Err(errs) = self.schema_registry.validate_content(
             &instance.document_type_id,
             &instance.content,
@@ -328,11 +314,6 @@ where
             Some(&instance),
         )?;
 
-        // Cascade delete: remove all snapshots before the instance (R2)
-        // No FK in AWS DSQL — app layer is responsible for referential integrity (ADR-007)
-        self.snapshot_repo
-            .delete_by_instance(cmd.document_instance_id)
-            .await?;
         self.instance_repo
             .delete(instance.document_type_id, cmd.document_instance_id)
             .await?;
@@ -343,7 +324,7 @@ where
         &self,
         caller: &CallerContext,
         cmd: PublishDocumentCommand,
-    ) -> Result<PublishedSnapshot, ApplicationError> {
+    ) -> Result<DocumentInstance, ApplicationError> {
         let mut instance = self
             .instance_repo
             .find_by_id(cmd.document_type, cmd.document_instance_id)
@@ -374,17 +355,10 @@ where
             )));
         }
 
-        let snapshot = instance.publish(
-            &doc_type.info.plural_name,
-            Some(caller.user_id.clone()),
-            Utc::now(),
-        )?;
-
-        // Save snapshot first, then update instance state
-        self.snapshot_repo.save(&snapshot).await?;
+        instance.publish(Some(caller.user_id.clone()), Utc::now())?;
         self.instance_repo.save(&instance).await?;
 
-        Ok(snapshot)
+        Ok(instance)
     }
 
     async fn unpublish(
@@ -427,33 +401,6 @@ where
 
         Ok(instance)
     }
-
-    async fn list_snapshots(
-        &self,
-        caller: &CallerContext,
-        cmd: ListSnapshotsCommand,
-    ) -> Result<Vec<PublishedSnapshot>, ApplicationError> {
-        // Require read permission; fetch instance to assert it belongs to the right type
-        let instance = self
-            .instance_repo
-            .find_by_id(cmd.document_type, cmd.document_instance_id)
-            .await?
-            .ok_or(ApplicationError::Domain(
-                DomainError::DocumentInstanceNotFound(cmd.document_instance_id),
-            ))?;
-
-        caller.check_permission(
-            &Permission::ReadDocument(Some(instance.document_type_id.clone())),
-            Some(&instance),
-        )?;
-
-        let snapshots = self
-            .snapshot_repo
-            .find_by_instance(cmd.document_instance_id)
-            .await?;
-
-        Ok(snapshots)
-    }
 }
 
 #[cfg(test)]
@@ -473,12 +420,12 @@ mod tests {
     use indexmap::IndexSet;
     use uuid::Uuid;
 
-    use crate::test_support::{FakeDocumentInstanceRepository, FakeSnapshotRepository};
+    use crate::test_support::FakeDocumentInstanceRepository;
 
     fn make_test_fixture(
         kind: DocumentKind,
     ) -> (
-        DocumentsServiceImpl<FakeDocumentInstanceRepository, FakeSnapshotRepository>,
+        DocumentsServiceImpl<FakeDocumentInstanceRepository>,
         DocumentType,
         CallerContext,
         AttributeId,
@@ -517,10 +464,8 @@ mod tests {
 
         let schema_registry = Arc::new(SchemaRegistry::new(vec![doc_type.clone()], vec![]));
         let instance_repo = Arc::new(FakeDocumentInstanceRepository::new());
-        let snapshot_repo = Arc::new(FakeSnapshotRepository::new());
 
-        let service =
-            DocumentsServiceImpl::new(instance_repo, snapshot_repo, schema_registry, config);
+        let service = DocumentsServiceImpl::new(instance_repo, schema_registry, config);
 
         let caller = CallerContext::system();
         (service, doc_type, caller, title_attr)
@@ -703,7 +648,7 @@ mod tests {
             .unwrap();
 
         // Publish
-        let snapshot = service
+        let published = service
             .publish(
                 &caller,
                 PublishDocumentCommand::new(created.id, doc_type.id.clone()),
@@ -711,17 +656,11 @@ mod tests {
             .await
             .expect("publish success");
 
-        assert_eq!(snapshot.instance_id, created.id);
-        assert_eq!(snapshot.revision, 1);
-        assert_eq!(snapshot.type_name, "articles");
-
-        // Verify snapshot in snapshot repository
-        let snaps = service
-            .snapshot_repo
-            .find_by_instance(created.id)
-            .await
-            .unwrap();
-        assert_eq!(snaps.len(), 1);
+        assert_eq!(published.id, created.id);
+        assert!(matches!(
+            published.content.publication_state,
+            PublicationState::Published { revision: 1, .. }
+        ));
 
         // Unpublish
         let unpublished = service
@@ -767,82 +706,6 @@ mod tests {
         assert!(matches!(res, Err(ApplicationError::Unauthorized { .. })));
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // R5: list_snapshots
-    // ──────────────────────────────────────────────────────────────────────
-
-    #[tokio::test]
-    async fn test_list_snapshots_returns_revision_history() {
-        let (service, doc_type, caller, title_attr) = make_test_fixture(DocumentKind::Collection);
-
-        // Create + publish twice
-        let mut fields = HashMap::new();
-        fields.insert(
-            title_attr,
-            ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text(
-                "Draft 1".into(),
-            ))),
-        );
-        let created = service
-            .create(
-                &caller,
-                CreateDocumentCommand::new(doc_type.id.clone(), fields),
-            )
-            .await
-            .expect("create succeeds");
-
-        service
-            .publish(
-                &caller,
-                PublishDocumentCommand::new(created.id, doc_type.id.clone()),
-            )
-            .await
-            .expect("first publish succeeds");
-        service
-            .publish(
-                &caller,
-                PublishDocumentCommand::new(created.id, doc_type.id.clone()),
-            )
-            .await
-            .expect("second publish succeeds");
-
-        let snapshots = service
-            .list_snapshots(
-                &caller,
-                ListSnapshotsCommand::new(doc_type.id.clone(), created.id),
-            )
-            .await
-            .expect("list_snapshots succeeds");
-
-        assert_eq!(snapshots.len(), 2, "should have 2 snapshots");
-        assert_eq!(snapshots[0].revision, 1);
-        assert_eq!(snapshots[1].revision, 2);
-    }
-
-    #[tokio::test]
-    async fn test_list_snapshots_unknown_instance_returns_not_found() {
-        let (service, doc_type, caller, _) = make_test_fixture(DocumentKind::Collection);
-
-        let fake_id = DocumentInstanceId::new(Uuid::now_v7());
-        let result = service
-            .list_snapshots(
-                &caller,
-                ListSnapshotsCommand::new(doc_type.id.clone(), fake_id),
-            )
-            .await;
-
-        assert!(matches!(
-            result,
-            Err(ApplicationError::Domain(
-                DomainError::DocumentInstanceNotFound(_)
-            ))
-        ));
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // R7: draft_and_publish lifecycle guard
-    // ──────────────────────────────────────────────────────────────────────
-
     #[tokio::test]
     async fn test_publish_blocked_when_draft_and_publish_disabled() {
         // Build a doc type that has draft_and_publish = false
@@ -879,9 +742,7 @@ mod tests {
         );
         let schema_registry = Arc::new(SchemaRegistry::new(vec![doc_type.clone()], vec![]));
         let instance_repo = Arc::new(FakeDocumentInstanceRepository::new());
-        let snapshot_repo = Arc::new(FakeSnapshotRepository::new());
-        let service =
-            DocumentsServiceImpl::new(instance_repo, snapshot_repo, schema_registry, config);
+        let service = DocumentsServiceImpl::new(instance_repo, schema_registry, config);
         let caller = CallerContext::system();
 
         let created = service
@@ -906,19 +767,15 @@ mod tests {
         );
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // R2: cascade delete of snapshots
-    // ──────────────────────────────────────────────────────────────────────
-
     #[tokio::test]
-    async fn test_delete_cascades_snapshots() {
+    async fn test_delete_removes_instance() {
         let (service, doc_type, caller, title_attr) = make_test_fixture(DocumentKind::Collection);
 
         let mut fields = HashMap::new();
         fields.insert(
             title_attr,
             ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text(
-                "Cascade".into(),
+                "ToDelete".into(),
             ))),
         );
         let created = service
@@ -928,24 +785,6 @@ mod tests {
             )
             .await
             .expect("create succeeds");
-
-        service
-            .publish(
-                &caller,
-                PublishDocumentCommand::new(created.id, doc_type.id.clone()),
-            )
-            .await
-            .expect("publish succeeds");
-
-        // Before delete: one snapshot
-        let before = service
-            .list_snapshots(
-                &caller,
-                ListSnapshotsCommand::new(doc_type.id.clone(), created.id),
-            )
-            .await
-            .expect("list_snapshots before delete");
-        assert_eq!(before.len(), 1);
 
         service
             .delete(

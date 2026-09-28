@@ -8,6 +8,7 @@ use domain::auth::{
     AccessRequest, AccessRequestRepository, AccessRequestStatus, Permission, Role, RoleId,
     RoleRepository, UserId, UserRoleAssignment, UserRoleAssignmentId, UserRoleAssignmentRepository,
 };
+use domain::common::{DisplayName, Email};
 use domain::schema::DocumentTypeId;
 use infrastructure::migrations::{ROLE_ADMIN_ID, ROLE_EDITOR_ID, run_migrations};
 use infrastructure::repositories::{
@@ -194,13 +195,11 @@ async fn test_access_request_repository_crud() {
     let repo = SqlxAccessRequestRepository::new(pool);
     let user_id = UserId::try_new(format!("new-user-{}", Uuid::now_v7())).unwrap();
 
+    let email = Email::try_new("test@example.com").ok();
+    let name = DisplayName::try_new("Test User").ok();
+
     // 1. Create a pending request
-    let mut request = AccessRequest::new(
-        user_id.clone(),
-        Some("test@example.com".into()),
-        Some("Test User".into()),
-        Utc::now(),
-    );
+    let mut request = AccessRequest::new(user_id.clone(), email.clone(), name.clone(), Utc::now());
     repo.save(&request).await.unwrap();
 
     // 2. Find by id and find by user
@@ -210,7 +209,7 @@ async fn test_access_request_repository_crud() {
         .unwrap()
         .expect("request exists");
     assert_eq!(by_id.user_id, user_id);
-    assert_eq!(by_id.email, Some("test@example.com".into()));
+    assert_eq!(by_id.email, email);
     assert!(matches!(by_id.status, AccessRequestStatus::Pending));
 
     let by_user = repo

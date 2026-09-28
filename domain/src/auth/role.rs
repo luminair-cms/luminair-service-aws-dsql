@@ -4,6 +4,20 @@ use serde::{Deserialize, Serialize};
 use crate::auth::ids::{RoleId, UserId, UserRoleAssignmentId};
 use crate::schema::ids::DocumentTypeId;
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Role {
+    pub id: RoleId,
+    pub name: String,
+    pub description: Option<String>,
+    pub permissions: Vec<Permission>,
+}
+
+impl Role {
+    pub fn has_permission(&self, action: &Permission) -> bool {
+        self.permissions.iter().any(|p| p.matches(action))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Permission {
     ManageSchema,
@@ -36,20 +50,6 @@ impl Permission {
             (Permission::PublishDocument(Some(a)), Permission::PublishDocument(Some(b))) => a == b,
             _ => false,
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Role {
-    pub id: RoleId,
-    pub name: String,
-    pub description: Option<String>,
-    pub permissions: Vec<Permission>,
-}
-
-impl Role {
-    pub fn has_permission(&self, action: &Permission) -> bool {
-        self.permissions.iter().any(|p| p.matches(action))
     }
 }
 

@@ -1,6 +1,7 @@
 //! Commands for user access request operations.
 
 use domain::auth::{AccessRequestId, RoleId, UserId};
+use domain::common::{DisplayName, Email};
 
 /// Command to submit a new access request.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -8,13 +9,13 @@ pub struct SubmitAccessRequestCommand {
     /// Identifier of the user submitting the request (OIDC sub).
     pub user_id: UserId,
     /// Email extracted from JWT claims (informational for admin review).
-    pub email: Option<String>,
+    pub email: Option<Email>,
     /// Name extracted from JWT claims (informational for admin review).
-    pub name: Option<String>,
+    pub name: Option<DisplayName>,
 }
 
 impl SubmitAccessRequestCommand {
-    pub fn new(user_id: UserId, email: Option<String>, name: Option<String>) -> Self {
+    pub fn new(user_id: UserId, email: Option<Email>, name: Option<DisplayName>) -> Self {
         Self {
             user_id,
             email,
@@ -64,15 +65,13 @@ mod tests {
     #[test]
     fn test_submit_access_request_command() {
         let user = UserId::try_new("sub_123").unwrap();
-        let cmd = SubmitAccessRequestCommand::new(
-            user.clone(),
-            Some("user@example.com".into()),
-            Some("John Doe".into()),
-        );
+        let email = Email::try_new("user@example.com").ok();
+        let name = DisplayName::try_new("John Doe").ok();
+        let cmd = SubmitAccessRequestCommand::new(user.clone(), email.clone(), name.clone());
 
         assert_eq!(cmd.user_id, user);
-        assert_eq!(cmd.email.as_deref(), Some("user@example.com"));
-        assert_eq!(cmd.name.as_deref(), Some("John Doe"));
+        assert_eq!(cmd.email, email);
+        assert_eq!(cmd.name, name);
     }
 
     #[test]

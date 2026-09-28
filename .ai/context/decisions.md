@@ -307,6 +307,26 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
   - Zero warnings on `cargo clippy --workspace --all-targets -- -D warnings`.
   - Clean formatting via `cargo fmt --check`.
 
+## 2026-09-28 — Domain Model Refinements & Snapshot Simplification (Post-MVP)
+
+- **`domain::common::DisplayName` Value Object**:
+  - Introduced `DisplayName(String)` nutype with `sanitize(trim)` and validation (`not_empty`, `len_char_max = 255`).
+  - Updated `AccessRequest` entity, application commands, and API handlers to use strongly typed `Option<Email>` and `Option<DisplayName>`.
+- **Removed `SystemConfigRepository`**:
+  - Eliminated `SystemConfigRepository` port trait from `domain::system` as `SystemConfig` is loaded once at startup from static JSON configuration and immutable at runtime (ADR-004, ADR-006).
+- **Separated Content Constraint Validation (`validator.rs`)**:
+  - Extracted field/type/regex/range/locale validation algorithms from `domain::schema::registry.rs` into `domain::schema::validator.rs`.
+  - `SchemaRegistry::validate_content` now cleanly delegates to `validator::validate_content`.
+- **Eliminated Snapshots from MVP Domain (Postponed to Post-MVP)**:
+  - Removed `PublishedSnapshot`, `SnapshotId`, and `SnapshotRepository` from `domain::content`, `application::services`, and `infrastructure::repositories`.
+  - `DocumentInstance::publish` now returns `Result<u32, DomainError>` (the new revision number) directly.
+  - Removed snapshot history query endpoints (`GET /api/{slug}/snapshots` and `GET /api/{slug}/{id}/snapshots`).
+- **Main-to-Support Type Ordering**:
+  - Re-ordered types in all domain aggregate files so the primary entity/struct is at the top (`FieldDefinition` before `FieldConstraint`, `DocumentType` before options/info, `Relation` before `RelationView`/`RelationInverse`, `DocumentInstance` before `AuditTrail`/`DocumentContent`, `Role` before `Permission`, `AccessRequest` before `AccessRequestStatus`).
+- **Full Verification**:
+  - 100% of workspace tests pass (197 tests: 90 domain, 38 application, 69 infrastructure).
+  - Zero warnings on `cargo clippy --workspace --all-targets -- -D warnings`.
+
 ---
 
 > **AI agents**: when you make a non-obvious decision during implementation, append an entry here.

@@ -1,10 +1,18 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum IntegerSize {
-    I16,
-    I32,
-    I64,
+pub enum FieldType {
+    Primitive(PrimitiveType),
+    LocalizedText,
+    Email,
+    Url,
+    Json,
+}
+
+impl From<PrimitiveType> for FieldType {
+    fn from(p: PrimitiveType) -> Self {
+        FieldType::Primitive(p)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -20,18 +28,10 @@ pub enum PrimitiveType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum FieldType {
-    Primitive(PrimitiveType),
-    LocalizedText,
-    Email,
-    Url,
-    Json,
-}
-
-impl From<PrimitiveType> for FieldType {
-    fn from(p: PrimitiveType) -> Self {
-        FieldType::Primitive(p)
-    }
+pub enum IntegerSize {
+    I16,
+    I32,
+    I64,
 }
 
 #[cfg(test)]

@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use domain::auth::{Permission, Role, RoleId, UserId};
+use domain::common::{DisplayName, Email};
 use domain::content::{
     ContentValue, DocumentInstance, DomainValue, Pagination, PrimitiveValue, PublicationState,
 };
@@ -26,14 +27,13 @@ use application::services::{
 };
 use application::test_support::{
     FakeAccessRequestRepository, FakeDocumentInstanceRepository, FakeRoleRepository,
-    FakeSnapshotRepository, FakeUserRoleAssignmentRepository,
+    FakeUserRoleAssignmentRepository,
 };
 
 /// Test harness packaging all interconnected application services and fake repositories.
 #[allow(dead_code)]
 struct TestAppHarness {
-    pub documents_service:
-        DocumentsServiceImpl<FakeDocumentInstanceRepository, FakeSnapshotRepository>,
+    pub documents_service: DocumentsServiceImpl<FakeDocumentInstanceRepository>,
     pub access_requests_service: AccessRequestsServiceImpl<
         FakeAccessRequestRepository,
         FakeUserRoleAssignmentRepository,
@@ -41,7 +41,6 @@ struct TestAppHarness {
     >,
     pub system_config_service: SystemConfigServiceImpl,
     pub instance_repo: Arc<FakeDocumentInstanceRepository>,
-    pub snapshot_repo: Arc<FakeSnapshotRepository>,
     pub access_request_repo: Arc<FakeAccessRequestRepository>,
     pub assignment_repo: Arc<FakeUserRoleAssignmentRepository>,
     pub role_repo: Arc<FakeRoleRepository>,
@@ -136,7 +135,6 @@ impl TestAppHarness {
 
         // 4. Repositories
         let instance_repo = Arc::new(FakeDocumentInstanceRepository::new());
-        let snapshot_repo = Arc::new(FakeSnapshotRepository::new());
         let access_request_repo = Arc::new(FakeAccessRequestRepository::new());
         let assignment_repo = Arc::new(FakeUserRoleAssignmentRepository::new());
 
@@ -156,7 +154,6 @@ impl TestAppHarness {
         // 5. Services
         let documents_service = DocumentsServiceImpl::new(
             instance_repo.clone(),
-            snapshot_repo.clone(),
             schema_registry,
             system_config.clone(),
         );
@@ -175,7 +172,6 @@ impl TestAppHarness {
             access_requests_service,
             system_config_service,
             instance_repo,
-            snapshot_repo,
             access_request_repo,
             assignment_repo,
             role_repo,
@@ -220,8 +216,8 @@ async fn test_end_to_end_user_enrollment_and_content_authoring() {
     // 2. Alice submits access request
     let submit_cmd = SubmitAccessRequestCommand::new(
         alice_id.clone(),
-        Some("alice@example.com".into()),
-        Some("Alice Smith".into()),
+        Email::try_new("alice@example.com").ok(),
+        DisplayName::try_new("Alice Smith").ok(),
     );
     let request = harness
         .access_requests_service
@@ -287,8 +283,8 @@ async fn test_end_to_end_user_enrollment_and_content_authoring() {
         .expect("update succeeds");
     assert_eq!(updated.audit.version, 2);
 
-    // 7. Alice publishes the article -> produces snapshot revision 1
-    let snapshot_v1 = harness
+    // 7. Alice publishes the article -> advances to revision 1
+    let published_v1 = harness
         .documents_service
         .publish(
             &alice_ctx,
@@ -296,8 +292,11 @@ async fn test_end_to_end_user_enrollment_and_content_authoring() {
         )
         .await
         .expect("publish succeeds");
-    assert_eq!(snapshot_v1.revision, 1);
-    assert_eq!(snapshot_v1.type_name, "articles");
+    assert_eq!(published_v1.id, article.id);
+    assert!(matches!(
+        published_v1.content.publication_state,
+        PublicationState::Published { revision: 1, .. }
+    ));
 
     // 8. Alice unpublishes article -> returns to Draft with last_published_revision = 1
     let unpub = harness
@@ -316,7 +315,7 @@ async fn test_end_to_end_user_enrollment_and_content_authoring() {
     ));
 
     // 9. Alice republishes -> advances to revision 2
-    let snapshot_v2 = harness
+    let published_v2 = harness
         .documents_service
         .publish(
             &alice_ctx,
@@ -324,7 +323,10 @@ async fn test_end_to_end_user_enrollment_and_content_authoring() {
         )
         .await
         .expect("republish succeeds");
-    assert_eq!(snapshot_v2.revision, 2);
+    assert!(matches!(
+        published_v2.content.publication_state,
+        PublicationState::Published { revision: 2, .. }
+    ));
 
     // 10. Another user Bob cannot update Alice's article
     let bob_id = UserId::try_new("bob-sub-002").unwrap();

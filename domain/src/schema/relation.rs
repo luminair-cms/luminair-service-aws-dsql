@@ -5,23 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use super::ids::{AttributeId, DocumentTypeId, RelationId};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum OwnerRelationKind {
-    HasOne,
-    HasMany,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum InverseRelationKind {
-    BelongsToOne,
-    BelongsToMany,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RelationInverse {
-    pub inverse_attr: AttributeId,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Relation {
     pub id: RelationId,
@@ -30,6 +13,45 @@ pub struct Relation {
     pub owner_kind: OwnerRelationKind,
     pub target_type: DocumentTypeId,
     pub inverse: Option<RelationInverse>,
+}
+
+impl Relation {
+    pub fn inverse_kind(&self) -> Option<InverseRelationKind> {
+        if self.inverse.is_some() {
+            match self.owner_kind {
+                OwnerRelationKind::HasOne => Some(InverseRelationKind::BelongsToOne),
+                OwnerRelationKind::HasMany => Some(InverseRelationKind::BelongsToMany),
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn view_for(&self, type_id: &DocumentTypeId) -> Option<RelationView> {
+        if type_id == &self.owner_type {
+            if self.inverse.is_some() {
+                Some(RelationView::OwnerSide {
+                    attr: self.owner_attr.clone(),
+                    kind: self.owner_kind,
+                    other_type: self.target_type.clone(),
+                })
+            } else {
+                Some(RelationView::Unidirectional {
+                    attr: self.owner_attr.clone(),
+                    kind: self.owner_kind,
+                    target_type: self.target_type.clone(),
+                })
+            }
+        } else if type_id == &self.target_type {
+            self.inverse.as_ref().map(|inv| RelationView::InverseSide {
+                attr: inv.inverse_attr.clone(),
+                kind: self.inverse_kind().expect("derived inverse kind"),
+                other_type: self.owner_type.clone(),
+            })
+        } else {
+            None
+        }
+    }
 }
 
 impl PartialEq for Relation {
@@ -77,43 +99,21 @@ pub enum RelationView {
     },
 }
 
-impl Relation {
-    pub fn inverse_kind(&self) -> Option<InverseRelationKind> {
-        if self.inverse.is_some() {
-            match self.owner_kind {
-                OwnerRelationKind::HasOne => Some(InverseRelationKind::BelongsToOne),
-                OwnerRelationKind::HasMany => Some(InverseRelationKind::BelongsToMany),
-            }
-        } else {
-            None
-        }
-    }
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelationInverse {
+    pub inverse_attr: AttributeId,
+}
 
-    pub fn view_for(&self, type_id: &DocumentTypeId) -> Option<RelationView> {
-        if type_id == &self.owner_type {
-            if self.inverse.is_some() {
-                Some(RelationView::OwnerSide {
-                    attr: self.owner_attr.clone(),
-                    kind: self.owner_kind,
-                    other_type: self.target_type.clone(),
-                })
-            } else {
-                Some(RelationView::Unidirectional {
-                    attr: self.owner_attr.clone(),
-                    kind: self.owner_kind,
-                    target_type: self.target_type.clone(),
-                })
-            }
-        } else if type_id == &self.target_type {
-            self.inverse.as_ref().map(|inv| RelationView::InverseSide {
-                attr: inv.inverse_attr.clone(),
-                kind: self.inverse_kind().expect("derived inverse kind"),
-                other_type: self.owner_type.clone(),
-            })
-        } else {
-            None
-        }
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum OwnerRelationKind {
+    HasOne,
+    HasMany,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum InverseRelationKind {
+    BelongsToOne,
+    BelongsToMany,
 }
 
 #[cfg(test)]

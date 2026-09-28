@@ -4,55 +4,11 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::ids::{DocumentInstanceId, SnapshotId};
+use super::ids::DocumentInstanceId;
 use super::values::ContentValue;
 use crate::auth::ids::UserId;
 use crate::errors::DomainError;
 use crate::schema::ids::{AttributeId, DocumentTypeId};
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum PublicationState {
-    Draft {
-        last_published_revision: Option<u32>,
-    },
-    Published {
-        revision: u32,
-        published_at: DateTime<Utc>,
-        published_by: Option<UserId>,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AuditTrail {
-    pub created_at: DateTime<Utc>,
-    pub created_by: Option<UserId>,
-    pub updated_at: DateTime<Utc>,
-    pub updated_by: Option<UserId>,
-    pub version: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ResolvedRelation {
-    pub attribute_id: AttributeId,
-    pub target_instance_id: DocumentInstanceId,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DocumentContent {
-    pub fields: HashMap<AttributeId, ContentValue>,
-    pub publication_state: PublicationState,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PublishedSnapshot {
-    pub id: SnapshotId,
-    pub instance_id: DocumentInstanceId,
-    pub type_name: String,
-    pub revision: u32,
-    pub published_at: DateTime<Utc>,
-    pub published_by: Option<UserId>,
-    pub fields: HashMap<AttributeId, ContentValue>,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DocumentInstance {
@@ -98,13 +54,8 @@ impl DocumentInstance {
         self
     }
 
-    /// Publishes the document instance, advancing its revision and returning an immutable PublishedSnapshot.
-    pub fn publish(
-        &mut self,
-        type_name: &str,
-        by: Option<UserId>,
-        now: DateTime<Utc>,
-    ) -> Result<PublishedSnapshot, DomainError> {
+    /// Publishes the document instance, advancing its revision and returning the new revision number.
+    pub fn publish(&mut self, by: Option<UserId>, now: DateTime<Utc>) -> Result<u32, DomainError> {
         let new_revision = match self.content.publication_state {
             PublicationState::Draft {
                 last_published_revision,
@@ -118,17 +69,9 @@ impl DocumentInstance {
             published_by: by.clone(),
         };
 
-        self.touch(by.clone(), now);
+        self.touch(by, now);
 
-        Ok(PublishedSnapshot {
-            id: SnapshotId::new(Uuid::now_v7()),
-            instance_id: self.id,
-            type_name: type_name.to_string(),
-            revision: new_revision,
-            published_at: now,
-            published_by: by,
-            fields: self.content.fields.clone(),
-        })
+        Ok(new_revision)
     }
 
     /// Transitions a published document back into a draft, recording the last published revision.
@@ -158,6 +101,39 @@ impl DocumentInstance {
     pub fn is_owned_by(&self, user_id: &UserId) -> bool {
         self.audit.created_by.as_ref() == Some(user_id)
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocumentContent {
+    pub fields: HashMap<AttributeId, ContentValue>,
+    pub publication_state: PublicationState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PublicationState {
+    Draft {
+        last_published_revision: Option<u32>,
+    },
+    Published {
+        revision: u32,
+        published_at: DateTime<Utc>,
+        published_by: Option<UserId>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditTrail {
+    pub created_at: DateTime<Utc>,
+    pub created_by: Option<UserId>,
+    pub updated_at: DateTime<Utc>,
+    pub updated_by: Option<UserId>,
+    pub version: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResolvedRelation {
+    pub attribute_id: AttributeId,
+    pub target_instance_id: DocumentInstanceId,
 }
 
 #[cfg(test)]
@@ -193,8 +169,8 @@ mod tests {
     fn test_publish_first_time() {
         let (mut instance, user, now) = make_test_instance();
         let publish_time = now + Duration::seconds(10);
-        let snapshot = instance
-            .publish("articles", Some(user.clone()), publish_time)
+        let revision = instance
+            .publish(Some(user.clone()), publish_time)
             .expect("publish success");
 
         assert_eq!(
@@ -202,31 +178,27 @@ mod tests {
             PublicationState::Published {
                 revision: 1,
                 published_at: publish_time,
-                published_by: Some(user.clone())
+                published_by: Some(user)
             }
         );
-        assert_eq!(snapshot.revision, 1);
-        assert_eq!(snapshot.type_name, "articles");
-        assert_eq!(snapshot.published_by, Some(user));
+        assert_eq!(revision, 1);
         assert_eq!(instance.audit.version, 2);
     }
 
     #[test]
     fn test_publish_increments_revision() {
         let (mut instance, user, now) = make_test_instance();
-        instance
-            .publish("articles", Some(user.clone()), now)
-            .unwrap();
+        instance.publish(Some(user.clone()), now).unwrap();
 
         let unpublish_time = now + Duration::seconds(5);
         instance.unpublish(unpublish_time).unwrap();
 
         let republish_time = now + Duration::seconds(10);
-        let snapshot = instance
-            .publish("articles", Some(user.clone()), republish_time)
+        let revision = instance
+            .publish(Some(user.clone()), republish_time)
             .unwrap();
 
-        assert_eq!(snapshot.revision, 2);
+        assert_eq!(revision, 2);
         assert_eq!(
             instance.content.publication_state,
             PublicationState::Published {
@@ -238,7 +210,7 @@ mod tests {
     }
 
     #[test]
-    fn test_publish_returns_snapshot() {
+    fn test_publish_preserves_content() {
         let (mut instance, user, now) = make_test_instance();
         let attr = AttributeId::try_new("title").unwrap();
         instance.content.fields.insert(
@@ -248,19 +220,17 @@ mod tests {
             ))),
         );
 
-        let snapshot = instance
-            .publish("articles", Some(user), now)
-            .expect("snapshot returned");
+        let rev = instance.publish(Some(user), now).expect("publish success");
 
-        assert_eq!(snapshot.instance_id, instance.id);
-        assert_eq!(snapshot.fields.len(), 1);
-        assert!(snapshot.fields.contains_key(&attr));
+        assert_eq!(rev, 1);
+        assert_eq!(instance.content.fields.len(), 1);
+        assert!(instance.content.fields.contains_key(&attr));
     }
 
     #[test]
     fn test_unpublish_records_last_revision() {
         let (mut instance, user, now) = make_test_instance();
-        instance.publish("articles", Some(user), now).unwrap();
+        instance.publish(Some(user), now).unwrap();
 
         let unpub_time = now + Duration::seconds(10);
         instance.unpublish(unpub_time).unwrap();

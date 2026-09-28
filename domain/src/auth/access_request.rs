@@ -4,21 +4,15 @@ use uuid::Uuid;
 
 use super::ids::{AccessRequestId, RoleId, UserId, UserRoleAssignmentId};
 use super::role::UserRoleAssignment;
+use crate::common::{DisplayName, Email};
 use crate::errors::DomainError;
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum AccessRequestStatus {
-    Pending,
-    Approved,
-    Rejected { reason: Option<String> },
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AccessRequest {
     pub id: AccessRequestId,
     pub user_id: UserId,
-    pub email: Option<String>,
-    pub name: Option<String>,
+    pub email: Option<Email>,
+    pub name: Option<DisplayName>,
     pub requested_at: DateTime<Utc>,
     pub status: AccessRequestStatus,
     pub reviewed_by: Option<UserId>,
@@ -29,8 +23,8 @@ pub struct AccessRequest {
 impl AccessRequest {
     pub fn new(
         user_id: UserId,
-        email: Option<String>,
-        name: Option<String>,
+        email: Option<Email>,
+        name: Option<DisplayName>,
         now: DateTime<Utc>,
     ) -> Self {
         Self {
@@ -103,19 +97,23 @@ impl AccessRequest {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AccessRequestStatus {
+    Pending,
+    Approved,
+    Rejected { reason: Option<String> },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn make_test_request() -> (AccessRequest, UserId, DateTime<Utc>) {
         let user = UserId::try_new("user_req").unwrap();
+        let email = Email::try_new("u@example.com").ok();
+        let name = DisplayName::try_new("User").ok();
         let now = Utc::now();
-        let req = AccessRequest::new(
-            user.clone(),
-            Some("u@example.com".into()),
-            Some("User".into()),
-            now,
-        );
+        let req = AccessRequest::new(user.clone(), email, name, now);
         (req, user, now)
     }
 

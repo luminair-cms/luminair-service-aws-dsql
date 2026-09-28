@@ -10,6 +10,63 @@ use crate::schema::types::{FieldType, IntegerSize, PrimitiveType};
 use crate::system::ids::LocaleId;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ContentValue {
+    Scalar(DomainValue),
+    LocalizedText(HashMap<LocaleId, String>),
+    Null,
+}
+
+impl From<DomainValue> for ContentValue {
+    fn from(v: DomainValue) -> Self {
+        ContentValue::Scalar(v)
+    }
+}
+
+impl From<PrimitiveValue> for ContentValue {
+    fn from(p: PrimitiveValue) -> Self {
+        ContentValue::Scalar(DomainValue::Primitive(p))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DomainValue {
+    Primitive(PrimitiveValue),
+    Email(Email),
+    Url(Url),
+    Json(HashMap<String, PrimitiveValue>),
+}
+
+impl DomainValue {
+    pub fn matches_field_type(&self, ft: &FieldType) -> bool {
+        match (self, ft) {
+            (DomainValue::Primitive(p), FieldType::Primitive(pt)) => p.matches_primitive_type(pt),
+            (DomainValue::Email(_), FieldType::Email) => true,
+            (DomainValue::Url(_), FieldType::Url) => true,
+            (DomainValue::Json(_), FieldType::Json) => true,
+            _ => false,
+        }
+    }
+}
+
+impl From<PrimitiveValue> for DomainValue {
+    fn from(p: PrimitiveValue) -> Self {
+        DomainValue::Primitive(p)
+    }
+}
+
+impl From<Email> for DomainValue {
+    fn from(e: Email) -> Self {
+        DomainValue::Email(e)
+    }
+}
+
+impl From<Url> for DomainValue {
+    fn from(u: Url) -> Self {
+        DomainValue::Url(u)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PrimitiveValue {
     Text(String),
     Uid(String),
@@ -38,63 +95,6 @@ impl PrimitiveValue {
             (PrimitiveValue::Boolean(_), PrimitiveType::Boolean) => true,
             _ => false,
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum DomainValue {
-    Primitive(PrimitiveValue),
-    Email(Email),
-    Url(Url),
-    Json(HashMap<String, PrimitiveValue>),
-}
-
-impl From<PrimitiveValue> for DomainValue {
-    fn from(p: PrimitiveValue) -> Self {
-        DomainValue::Primitive(p)
-    }
-}
-
-impl From<Email> for DomainValue {
-    fn from(e: Email) -> Self {
-        DomainValue::Email(e)
-    }
-}
-
-impl From<Url> for DomainValue {
-    fn from(u: Url) -> Self {
-        DomainValue::Url(u)
-    }
-}
-
-impl DomainValue {
-    pub fn matches_field_type(&self, ft: &FieldType) -> bool {
-        match (self, ft) {
-            (DomainValue::Primitive(p), FieldType::Primitive(pt)) => p.matches_primitive_type(pt),
-            (DomainValue::Email(_), FieldType::Email) => true,
-            (DomainValue::Url(_), FieldType::Url) => true,
-            (DomainValue::Json(_), FieldType::Json) => true,
-            _ => false,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ContentValue {
-    Scalar(DomainValue),
-    LocalizedText(HashMap<LocaleId, String>),
-    Null,
-}
-
-impl From<DomainValue> for ContentValue {
-    fn from(v: DomainValue) -> Self {
-        ContentValue::Scalar(v)
-    }
-}
-
-impl From<PrimitiveValue> for ContentValue {
-    fn from(p: PrimitiveValue) -> Self {
-        ContentValue::Scalar(DomainValue::Primitive(p))
     }
 }
 

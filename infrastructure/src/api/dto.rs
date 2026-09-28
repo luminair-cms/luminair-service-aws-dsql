@@ -7,7 +7,6 @@ use domain::auth::{AccessRequest, AccessRequestStatus};
 use domain::common::{Email, Url};
 use domain::content::{
     ContentValue, DocumentInstance, DomainValue, PrimitiveValue, PublicationState,
-    PublishedSnapshot,
 };
 use domain::schema::{AttributeId, DocumentType, FieldType, PrimitiveType};
 use domain::system::LocaleId;
@@ -90,8 +89,8 @@ impl From<&AccessRequest> for AccessRequestDto {
         Self {
             id: req.id.as_ref().to_string(),
             user_id: req.user_id.as_ref().to_string(),
-            email: req.email.clone(),
-            name: req.name.clone(),
+            email: req.email.as_ref().map(|e| e.as_ref().to_string()),
+            name: req.name.as_ref().map(|n| n.as_ref().to_string()),
             status: status.to_string(),
             requested_at: req.requested_at.to_rfc3339(),
             reviewed_at: req.reviewed_at.map(|t| t.to_rfc3339()),
@@ -149,40 +148,6 @@ pub fn document_to_json(
             attr_id.as_ref().to_string(),
             serde_json::Value::Array(related_json),
         );
-    }
-
-    serde_json::Value::Object(map)
-}
-
-/// Converts a `PublishedSnapshot` to its API JSON representation.
-pub fn snapshot_to_json(
-    snapshot: &PublishedSnapshot,
-    _doc_type: &DocumentType,
-) -> serde_json::Value {
-    let mut map = serde_json::Map::new();
-    map.insert("id".to_string(), json!(snapshot.id.as_ref().to_string()));
-    map.insert(
-        "document-id".to_string(),
-        json!(snapshot.instance_id.as_ref().to_string()),
-    );
-    map.insert("type-name".to_string(), json!(snapshot.type_name));
-    map.insert("revision".to_string(), json!(snapshot.revision));
-    map.insert(
-        "published-at".to_string(),
-        json!(snapshot.published_at.to_rfc3339()),
-    );
-    map.insert(
-        "published-by".to_string(),
-        json!(
-            snapshot
-                .published_by
-                .as_ref()
-                .map(|u| u.as_ref().to_string())
-        ),
-    );
-
-    for (attr_id, val) in &snapshot.fields {
-        map.insert(attr_id.as_ref().to_string(), content_value_to_json(val));
     }
 
     serde_json::Value::Object(map)

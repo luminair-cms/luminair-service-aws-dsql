@@ -7,25 +7,6 @@ use serde::{Deserialize, Serialize};
 use super::field_definition::FieldDefinition;
 use super::ids::{AttributeId, DocumentTypeId};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum DocumentKind {
-    Collection,
-    SingleType,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DocumentTypeInfo {
-    pub title: String,
-    pub singular_name: String,
-    pub plural_name: String,
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DocumentTypeOptions {
-    pub draft_and_publish: bool,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentType {
     pub id: DocumentTypeId,
@@ -76,6 +57,25 @@ impl Borrow<str> for DocumentType {
     fn borrow(&self) -> &str {
         self.id.as_ref()
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum DocumentKind {
+    Collection,
+    SingleType,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocumentTypeInfo {
+    pub title: String,
+    pub singular_name: String,
+    pub plural_name: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocumentTypeOptions {
+    pub draft_and_publish: bool,
 }
 
 #[cfg(test)]

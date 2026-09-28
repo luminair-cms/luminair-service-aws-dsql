@@ -126,7 +126,7 @@ impl DeleteDocumentCommand {
     }
 }
 
-/// Command to publish a draft document instance into a published snapshot.
+/// Command to publish a draft document instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishDocumentCommand {
     /// Identifier of the document instance to publish.
@@ -158,24 +158,6 @@ impl UnpublishDocumentCommand {
         Self {
             document_instance_id,
             document_type,
-        }
-    }
-}
-
-/// Query command to list all published snapshots (revision history) for a document instance.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ListSnapshotsCommand {
-    /// Document type of the target document.
-    pub document_type: DocumentTypeId,
-    /// Identifier of the document instance whose snapshots to retrieve.
-    pub document_instance_id: DocumentInstanceId,
-}
-
-impl ListSnapshotsCommand {
-    pub fn new(document_type: DocumentTypeId, document_instance_id: DocumentInstanceId) -> Self {
-        Self {
-            document_type,
-            document_instance_id,
         }
     }
 }
