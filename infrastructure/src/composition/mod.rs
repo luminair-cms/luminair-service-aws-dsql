@@ -3,6 +3,8 @@
 //! Wires together database pools, repository implementations, application services,
 //! and authentication components into an `AppContainer`.
 
+pub mod config;
 pub mod container;
 
-pub use container::AppContainer;
+pub use config::{ConfigError, ServerConfig};
+pub use container::{AppContainer, BootstrapError};

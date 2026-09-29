@@ -8,14 +8,38 @@ use application::services::system_config::SystemConfigServiceImpl;
 use domain::schema::SchemaRegistry;
 use domain::system::SystemConfig;
 use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
+use thiserror::Error;
 
+use super::config::{ConfigError, ServerConfig};
 use crate::api::health::HealthChecker;
 use crate::api::state::HttpState;
-use crate::auth::{AuthAppState, TokenValidator};
+use crate::auth::{AuthAppState, AuthError, TokenValidator, run_bootstrap};
+use crate::migrations::run_migrations;
 use crate::repositories::{
     SqlxAccessRequestRepository, SqlxDocumentInstanceRepository, SqlxRoleRepository,
     SqlxShadowUserRepository, SqlxUserRoleAssignmentRepository,
 };
+use crate::schema_loader::{SafetyPolicy, SchemaSyncError, sync_schemas};
+
+/// Errors encountered during application infrastructure bootstrapping.
+#[derive(Debug, Error)]
+pub enum BootstrapError {
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+
+    #[error("Database connection error: {0}")]
+    Database(#[from] sqlx::Error),
+
+    #[error("Database migration error: {0}")]
+    Migration(#[from] sqlx::migrate::MigrateError),
+
+    #[error("Dynamic schema sync error: {0}")]
+    SchemaSync(#[from] SchemaSyncError),
+
+    #[error("Administrator bootstrap error: {0}")]
+    AuthBootstrap(#[from] AuthError),
+}
 
 /// Central composition root container holding initialized services and adapters.
 #[derive(Clone)]
@@ -42,6 +66,51 @@ pub struct AppContainer {
 }
 
 impl AppContainer {
+    /// Bootstraps the complete application infrastructure from configuration:
+    /// 1. Connects to the database pool
+    /// 2. Runs static database migrations (MIGRATOR)
+    /// 3. Synchronizes declarative JSON document schemas (sync_schemas)
+    /// 4. Initializes the token validator (JWKS or secret)
+    /// 5. Assembles AppContainer
+    /// 6. Executes the administrator bootstrap hook (run_bootstrap)
+    pub async fn bootstrap(config: &ServerConfig) -> Result<Self, BootstrapError> {
+        tracing::info!("Connecting to database pool...");
+        let pool = PgPoolOptions::new()
+            .max_connections(config.max_db_connections)
+            .connect(&config.database_url)
+            .await?;
+
+        tracing::info!("Running static system migrations...");
+        run_migrations(&pool).await?;
+
+        tracing::info!(
+            "Synchronizing document schemas from '{}'...",
+            config.schema_dir.display()
+        );
+        let sync_result =
+            sync_schemas(&pool, &config.schema_dir, SafetyPolicy::AdditiveOnly).await?;
+
+        let validator = config.init_token_validator()?;
+
+        let container = Self::new(
+            pool.clone(),
+            validator,
+            Arc::new(sync_result.registry),
+            Arc::new(sync_result.system_config),
+        );
+
+        tracing::info!("Checking administrator bootstrap hook...");
+        run_bootstrap(
+            &pool,
+            &config.auth,
+            container.assignment_repo.as_ref(),
+            container.access_request_repo.as_ref(),
+        )
+        .await?;
+
+        Ok(container)
+    }
+
     /// Creates and wires the complete composition container from base dependencies.
     pub fn new(
         pool: PgPool,

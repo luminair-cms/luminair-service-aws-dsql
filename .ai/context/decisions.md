@@ -376,9 +376,11 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
 - **Decoupled Auth Extractor via `AuthContextResolver`**:
   - Introduced `AuthContextResolver` in `infrastructure::src::auth::resolver.rs` to encapsulate shadow user upserts, role resolution, and enrollment state checks (`Pending`, `Approved`, `Rejected`).
   - Simplified Axum's `AuthUser::from_request_parts` extractor to delegate caller resolution cleanly to `resolver.resolve_context(&claims)`.
-- **Added Executable Binary Composition Root (`infrastructure/src/main.rs`)**:
-  - Implemented the production runtime entry point as planned in `docs/architecture.md`.
-  - Wires environment loading, database connection pooling, static migrations, dynamic schema synchronization, token validation, admin bootstrap hook, TCP listener binding, and graceful shutdown handling (`tokio::signal::ctrl_c`).
+- **Decomposed Binary Entry Point (`infrastructure/src/main.rs`)**:
+  - Extracted environment configuration and token validator factory into `ServerConfig` (`infrastructure::src::composition::config`), enabling isolated unit testing of configuration parsing.
+  - Encapsulated the entire infrastructure provisioning pipeline (database connection $\rightarrow$ static migrations $\rightarrow$ dynamic schema sync $\rightarrow$ admin bootstrap $\rightarrow$ container assembly) into `AppContainer::bootstrap(&config)`.
+  - Decomposed `main.rs` into three concise, single-purpose functions: `init_tracing()`, `run_server(&config, container)`, and `shutdown_signal()`, reducing `main()` to an 8-line orchestrator.
 - **Full Verification**:
-  - 100% of workspace tests pass (169 tests: 96 domain, 35 application, 38 infrastructure).
+  - 100% of workspace tests pass (172 tests: 96 domain, 35 application, 41 infrastructure).
   - Zero warnings on `cargo clippy --workspace -- -D warnings`.
+
