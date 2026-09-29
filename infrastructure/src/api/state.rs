@@ -1,4 +1,4 @@
-//! Global application state wiring for Axum handlers and extractors.
+//! HTTP routing state for Axum handlers and extractors.
 
 use std::sync::Arc;
 
@@ -10,17 +10,21 @@ use domain::schema::SchemaRegistry;
 use domain::system::SystemConfig;
 use sqlx::PgPool;
 
+use super::health::HealthChecker;
 use crate::auth::AuthAppState;
+use crate::composition::AppContainer;
 use crate::repositories::{
     SqlxAccessRequestRepository, SqlxDocumentInstanceRepository, SqlxRoleRepository,
     SqlxUserRoleAssignmentRepository,
 };
 
-/// Global application state shared across all HTTP routes.
+/// HTTP routing state shared across all Axum routes.
+///
+/// Contains strictly application services and metadata required by HTTP handlers.
+/// Database connection pools and raw repositories are isolated in `AppContainer`.
 #[derive(Clone)]
-pub struct AppState {
+pub struct HttpState {
     pub auth: AuthAppState,
-    pub pool: PgPool,
     pub schema_registry: Arc<SchemaRegistry>,
     pub system_config: Arc<SystemConfig>,
     pub documents_service: Arc<DocumentsServiceImpl<SqlxDocumentInstanceRepository>>,
@@ -32,52 +36,32 @@ pub struct AppState {
         >,
     >,
     pub system_config_service: Arc<SystemConfigServiceImpl>,
+    pub health_checker: Arc<HealthChecker>,
 }
 
-impl AppState {
+/// Backwards-compatible alias for `HttpState`.
+pub type AppState = HttpState;
+
+impl HttpState {
+    /// Creates a new HttpState using the composition root container.
     pub fn new(
         pool: PgPool,
         auth: AuthAppState,
         schema_registry: Arc<SchemaRegistry>,
         system_config: Arc<SystemConfig>,
     ) -> Self {
-        let instance_repo = Arc::new(SqlxDocumentInstanceRepository::new(
-            pool.clone(),
-            schema_registry.clone(),
-        ));
-
-        let documents_service = Arc::new(DocumentsServiceImpl::new(
-            instance_repo,
-            schema_registry.clone(),
-            system_config.clone(),
-        ));
-
-        let access_request_repo = Arc::new(SqlxAccessRequestRepository::new(pool.clone()));
-        let assignment_repo = Arc::new(SqlxUserRoleAssignmentRepository::new(pool.clone()));
-        let role_repo = Arc::new(SqlxRoleRepository::new(pool.clone()));
-
-        let access_requests_service = Arc::new(AccessRequestsServiceImpl::new(
-            access_request_repo,
-            assignment_repo,
-            role_repo,
-        ));
-
-        let system_config_service = Arc::new(SystemConfigServiceImpl::new(system_config.clone()));
-
-        Self {
-            auth,
+        let container = AppContainer::with_auth_state(
             pool,
+            auth,
             schema_registry,
             system_config,
-            documents_service,
-            access_requests_service,
-            system_config_service,
-        }
+        );
+        container.to_http_state()
     }
 }
 
-impl FromRef<AppState> for AuthAppState {
-    fn from_ref(state: &AppState) -> Self {
+impl FromRef<HttpState> for AuthAppState {
+    fn from_ref(state: &HttpState) -> Self {
         state.auth.clone()
     }
 }

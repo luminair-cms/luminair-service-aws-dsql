@@ -6,14 +6,11 @@ use application::context::CallerContext;
 use axum::extract::{FromRef, FromRequestParts};
 use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
-use domain::auth::{
-    AccessRequestRepository, AccessRequestStatus, Role, RoleRepository,
-    UserRoleAssignmentRepository,
-};
 use sqlx::PgPool;
 
 use super::claims::Claims;
 use super::errors::AuthError;
+use super::resolver::AuthContextResolver;
 use super::shadow_users::SqlxShadowUserRepository;
 use super::validator::TokenValidator;
 use crate::repositories::{
@@ -25,6 +22,13 @@ use crate::repositories::{
 pub struct AuthAppState {
     pub pool: PgPool,
     pub validator: Arc<dyn TokenValidator>,
+    pub resolver: Arc<
+        AuthContextResolver<
+            SqlxUserRoleAssignmentRepository,
+            SqlxRoleRepository,
+            SqlxAccessRequestRepository,
+        >,
+    >,
     pub role_repo: SqlxRoleRepository,
     pub assignment_repo: SqlxUserRoleAssignmentRepository,
     pub access_request_repo: SqlxAccessRequestRepository,
@@ -37,9 +41,18 @@ impl AuthAppState {
         let assignment_repo = SqlxUserRoleAssignmentRepository::new(pool.clone());
         let access_request_repo = SqlxAccessRequestRepository::new(pool.clone());
         let shadow_user_repo = SqlxShadowUserRepository::new(pool.clone());
+
+        let resolver = Arc::new(AuthContextResolver::new(
+            Arc::new(assignment_repo.clone()),
+            Arc::new(role_repo.clone()),
+            Arc::new(access_request_repo.clone()),
+            Arc::new(shadow_user_repo.clone()),
+        ));
+
         Self {
             pool,
             validator,
+            resolver,
             role_repo,
             assignment_repo,
             access_request_repo,
@@ -123,56 +136,11 @@ where
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let auth_state = AuthAppState::from_ref(state);
 
-        // 1. Extract verified claims and upsert shadow user
         let AuthenticatedClaims(claims) =
             AuthenticatedClaims::from_request_parts(parts, state).await?;
-        let user_id = claims.user_id()?;
 
-        // 2. Fetch assigned roles
-        let assignments = auth_state
-            .assignment_repo
-            .find_by_user(&user_id)
-            .await
-            .map_err(|e| AuthError::Storage(e.to_string()))?;
+        let caller = auth_state.resolver.resolve_context(&claims).await?;
 
-        if !assignments.is_empty() {
-            let mut roles: Vec<Role> = Vec::with_capacity(assignments.len());
-            for assignment in assignments {
-                if let Some(role) = auth_state
-                    .role_repo
-                    .find_by_id(assignment.role_id)
-                    .await
-                    .map_err(|e| AuthError::Storage(e.to_string()))?
-                {
-                    roles.push(role);
-                }
-            }
-
-            if !roles.is_empty() {
-                let caller = CallerContext::new(user_id, roles);
-                return Ok(AuthUser { caller, claims });
-            }
-        }
-
-        // 3. User has no active role assignments: check AccessRequest status
-        let access_request = auth_state
-            .access_request_repo
-            .find_by_user(&user_id)
-            .await
-            .map_err(|e| AuthError::Storage(e.to_string()))?;
-
-        match access_request {
-            Some(req) => match req.status {
-                AccessRequestStatus::Pending => Err(AuthError::AccessPending),
-                AccessRequestStatus::Rejected { reason } => {
-                    Err(AuthError::AccessRejected { reason })
-                }
-                AccessRequestStatus::Approved => {
-                    // Approved but no assignments found yet
-                    Err(AuthError::AccessPending)
-                }
-            },
-            None => Err(AuthError::AccessNotRequested),
-        }
+        Ok(AuthUser { caller, claims })
     }
 }

@@ -364,13 +364,21 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
   - Replaced `populate: Option<Vec<AttributeId>>` with borrowed slice `populate: &[AttributeId]` in `DocumentsServiceImpl::enrich`.
   - Explicitly typed `relation_map: RelationMap` using `domain::content::RelationMap`.
   - Documented partial PATCH field replacement semantics where `ContentValue::Null` explicitly clears optional fields.
+## 2026-09-29 — Infrastructure Crate Hexagonal & DDD Refactoring
 
-
-
-
-
-
-
-
-
-
+- **Centralized Composition Root (`AppContainer`) & Pure `HttpState`**:
+  - Extracted dependency injection and application service wiring out of HTTP state into a dedicated `AppContainer` in `infrastructure::src::composition::container`.
+  - Renamed `AppState` to `HttpState` to reflect its true destination as an HTTP-only routing adapter state (`AppState` retained as a backward-compatible type alias).
+  - Completely eliminated `PgPool` from `HttpState`. The HTTP layer now holds only application services, schema/system metadata, auth state, and a decoupled `HealthChecker` service (`infrastructure::src::api::health::HealthChecker`), preventing raw database queries inside HTTP probe handlers.
+- **Consolidated Persistence Boundary for Shadow Users**:
+  - Relocated `SqlxShadowUserRepository` and `ShadowUser` to `infrastructure::src::repositories::shadow_user_repository`, unifying all SQLx database adapters under `src/repositories/`.
+  - Maintained backward-compatible re-exports in `infrastructure::auth` for zero churn.
+- **Decoupled Auth Extractor via `AuthContextResolver`**:
+  - Introduced `AuthContextResolver` in `infrastructure::src::auth::resolver.rs` to encapsulate shadow user upserts, role resolution, and enrollment state checks (`Pending`, `Approved`, `Rejected`).
+  - Simplified Axum's `AuthUser::from_request_parts` extractor to delegate caller resolution cleanly to `resolver.resolve_context(&claims)`.
+- **Added Executable Binary Composition Root (`infrastructure/src/main.rs`)**:
+  - Implemented the production runtime entry point as planned in `docs/architecture.md`.
+  - Wires environment loading, database connection pooling, static migrations, dynamic schema synchronization, token validation, admin bootstrap hook, TCP listener binding, and graceful shutdown handling (`tokio::signal::ctrl_c`).
+- **Full Verification**:
+  - 100% of workspace tests pass (169 tests: 96 domain, 35 application, 38 infrastructure).
+  - Zero warnings on `cargo clippy --workspace -- -D warnings`.

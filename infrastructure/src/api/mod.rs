@@ -14,5 +14,7 @@ pub use dto::{
     SingleResponse, parse_fields_from_json, parse_payload_from_json,
 };
 pub use errors::{ApiError, ProblemDetails};
+pub use health::HealthChecker;
 pub use router::create_router;
-pub use state::AppState;
+pub use state::{AppState, HttpState};
+

@@ -7,10 +7,10 @@ use super::access_requests;
 use super::documents;
 use super::health;
 use super::schema;
-use super::state::AppState;
+use super::state::HttpState;
 
 /// Constructs the complete Axum HTTP router with all API routes.
-pub fn create_router(state: AppState) -> Router {
+pub fn create_router(state: HttpState) -> Router {
     Router::new()
         // Health probes
         .route("/health", get(health::liveness))

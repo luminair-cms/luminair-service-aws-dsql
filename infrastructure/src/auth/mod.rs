@@ -11,6 +11,7 @@ pub mod claims;
 pub mod config;
 pub mod errors;
 pub mod extractors;
+pub mod resolver;
 pub mod shadow_users;
 pub mod validator;
 
@@ -19,5 +20,7 @@ pub use claims::Claims;
 pub use config::AuthConfig;
 pub use errors::{AuthError, ForbiddenReason};
 pub use extractors::{AuthAppState, AuthUser, AuthenticatedClaims};
+pub use resolver::AuthContextResolver;
 pub use shadow_users::{ShadowUser, SqlxShadowUserRepository};
 pub use validator::{JwksTokenValidator, MockTokenValidator, SecretTokenValidator, TokenValidator};
+

@@ -21,6 +21,7 @@ sea-query = { workspace = true }
 axum = { workspace = true }
 jsonwebtoken = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
