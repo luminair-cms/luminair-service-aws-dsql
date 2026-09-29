@@ -133,6 +133,32 @@ impl AccessRequestRepository for SqlxAccessRequestRepository {
         }
     }
 
+    fn find_active_by_user(
+        &self,
+        user_id: &UserId,
+    ) -> impl Future<Output = Result<Option<AccessRequest>, DomainError>> + Send {
+        let pool = self.pool.clone();
+        let user_id_str = user_id.as_ref().to_string();
+        async move {
+            let row_opt = sqlx::query(
+                r#"
+                SELECT id, user_id, email, name, requested_at, status, rejection_reason,
+                       reviewed_by, reviewed_at, assigned_roles
+                FROM access_requests
+                WHERE user_id = $1 AND status IN ('pending', 'approved')
+                ORDER BY requested_at DESC
+                LIMIT 1
+                "#,
+            )
+            .bind(&user_id_str)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| DomainError::Storage(e.to_string()))?;
+
+            row_opt.map(map_row_to_access_request).transpose()
+        }
+    }
+
     fn find_pending(&self) -> impl Future<Output = Result<Vec<AccessRequest>, DomainError>> + Send {
         let pool = self.pool.clone();
         async move {

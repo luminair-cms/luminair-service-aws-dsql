@@ -6,7 +6,9 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use domain::auth::Permission;
-use domain::content::{DocumentInstance, DocumentInstanceId, DocumentInstanceRepository};
+use domain::content::{
+    DocumentInstance, DocumentInstanceId, DocumentInstanceRepository, RelationMap,
+};
 use domain::errors::DomainError;
 use domain::schema::{
     AttributeId, DocumentKind, DocumentTypeId, InverseRelationKind, OwnerRelationKind,
@@ -99,24 +101,19 @@ where
     pub async fn enrich(
         &self,
         type_id: DocumentTypeId,
-        populate: Option<Vec<AttributeId>>,
+        populate: &[AttributeId],
         instances: Vec<DocumentInstance>,
     ) -> Result<Vec<DocumentInstance>, ApplicationError> {
-        let populate_attrs = match populate {
-            Some(attrs) if !attrs.is_empty() => attrs,
-            _ => return Ok(instances),
-        };
-
-        if instances.is_empty() {
+        if populate.is_empty() || instances.is_empty() {
             return Ok(instances);
         }
 
         let parent_ids: Vec<DocumentInstanceId> = instances.iter().map(|inst| inst.id).collect();
 
         // Batch fetch relations for all parent instances in one query
-        let mut relation_map = self
+        let mut relation_map: RelationMap = self
             .instance_repo
-            .fetch_relations(type_id, &populate_attrs, &parent_ids)
+            .fetch_relations(type_id, populate, &parent_ids)
             .await?;
 
         // Attach populated relations in-memory
@@ -124,7 +121,7 @@ where
             .into_iter()
             .map(|inst| {
                 let mut per_doc_relations = HashMap::new();
-                for attr in &populate_attrs {
+                for attr in populate {
                     if let Some(by_parent) = relation_map.get_mut(attr)
                         && let Some(related_items) = by_parent.remove(&inst.id)
                     {
@@ -247,7 +244,11 @@ where
 
         // Two-phase batch relation enrichment
         let enriched = self
-            .enrich(cmd.document_type, cmd.populate, page.items)
+            .enrich(
+                cmd.document_type,
+                cmd.populate.as_deref().unwrap_or_default(),
+                page.items,
+            )
             .await?;
 
         Ok((enriched, count))
@@ -270,7 +271,11 @@ where
                     Some(&inst),
                 )?;
                 let mut enriched = self
-                    .enrich(cmd.document_type, cmd.populate, vec![inst])
+                    .enrich(
+                        cmd.document_type,
+                        cmd.populate.as_deref().unwrap_or_default(),
+                        vec![inst],
+                    )
                     .await?;
                 Ok(enriched.pop())
             }
@@ -331,9 +336,10 @@ where
 
         self.instance_repo.save(&instance).await?;
 
-        if let Some(populate) = cmd.populate {
+        let populate = cmd.populate.as_deref().unwrap_or_default();
+        if !populate.is_empty() {
             let mut enriched = self
-                .enrich(cmd.document_type, Some(populate), vec![instance])
+                .enrich(cmd.document_type, populate, vec![instance])
                 .await?;
             Ok(enriched.pop().expect("enriched instance"))
         } else {
@@ -359,7 +365,8 @@ where
             Some(&instance),
         )?;
 
-        // Apply updated fields
+        // Apply updated fields (supports partial PATCH: omitted fields are retained,
+        // while explicit ContentValue::Null clears/resets optional field values).
         for (attr, val) in cmd.fields {
             instance.content.fields.insert(attr, val);
         }
@@ -381,9 +388,10 @@ where
 
         self.instance_repo.save(&instance).await?;
 
-        if let Some(populate) = cmd.populate {
+        let populate = cmd.populate.as_deref().unwrap_or_default();
+        if !populate.is_empty() {
             let mut enriched = self
-                .enrich(cmd.document_type, Some(populate), vec![instance])
+                .enrich(cmd.document_type, populate, vec![instance])
                 .await?;
             Ok(enriched.pop().expect("enriched instance"))
         } else {

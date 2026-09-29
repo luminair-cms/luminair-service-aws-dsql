@@ -222,6 +222,14 @@ impl RoleRepository for FakeRoleRepository {
         Ok(store.get(&id).cloned())
     }
 
+    async fn find_by_ids(&self, ids: &[RoleId]) -> Result<Vec<Role>, DomainError> {
+        let store = self
+            .roles
+            .read()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
+        Ok(ids.iter().filter_map(|id| store.get(id).cloned()).collect())
+    }
+
     async fn find_by_name(&self, name: &str) -> Result<Option<Role>, DomainError> {
         let store = self
             .roles
@@ -286,7 +294,20 @@ impl UserRoleAssignmentRepository for FakeUserRoleAssignmentRepository {
             .assignments
             .write()
             .map_err(|_| DomainError::Unauthorized("failed to acquire write lock".into()))?;
+        store.retain(|a| !(a.user_id == assignment.user_id && a.role_id == assignment.role_id));
         store.push(assignment.clone());
+        Ok(())
+    }
+
+    async fn save_all(&self, assignments: &[UserRoleAssignment]) -> Result<(), DomainError> {
+        let mut store = self
+            .assignments
+            .write()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire write lock".into()))?;
+        for assignment in assignments {
+            store.retain(|a| !(a.user_id == assignment.user_id && a.role_id == assignment.role_id));
+            store.push(assignment.clone());
+        }
         Ok(())
     }
 
@@ -322,6 +343,21 @@ impl AccessRequestRepository for FakeAccessRequestRepository {
     }
 
     async fn find_by_user(&self, user_id: &UserId) -> Result<Option<AccessRequest>, DomainError> {
+        let store = self
+            .requests
+            .read()
+            .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
+        Ok(store
+            .values()
+            .filter(|r| r.user_id == *user_id)
+            .max_by_key(|r| r.requested_at)
+            .cloned())
+    }
+
+    async fn find_active_by_user(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Option<AccessRequest>, DomainError> {
         let store = self
             .requests
             .read()

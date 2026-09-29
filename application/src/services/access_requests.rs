@@ -1,5 +1,6 @@
 //! Access requests application service.
 
+use std::collections::HashSet;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -83,8 +84,11 @@ where
         cmd: SubmitAccessRequestCommand,
     ) -> Result<AccessRequest, ApplicationError> {
         // Enforce invariant: at most one active (Pending or Approved) request per user
-        if let Some(existing) = self.access_request_repo.find_by_user(&cmd.user_id).await?
-            && existing.is_active()
+        if self
+            .access_request_repo
+            .find_active_by_user(&cmd.user_id)
+            .await?
+            .is_some()
         {
             return Err(ApplicationError::Domain(
                 DomainError::AccessRequestAlreadyActive(cmd.user_id),
@@ -111,9 +115,12 @@ where
                 DomainError::AccessRequestNotFound(cmd.request_id),
             ))?;
 
-        // Validate that all assigned roles exist
+        // Validate that all assigned roles exist in a single batch query
+        let existing_roles = self.role_repo.find_by_ids(&cmd.role_ids).await?;
+        let existing_role_ids: HashSet<_> = existing_roles.into_iter().map(|r| r.id).collect();
+
         for role_id in &cmd.role_ids {
-            if self.role_repo.find_by_id(*role_id).await?.is_none() {
+            if !existing_role_ids.contains(role_id) {
                 return Err(ApplicationError::NotFound {
                     entity: "Role",
                     id: role_id.to_string(),
@@ -123,10 +130,8 @@ where
 
         let assignments = request.approve(caller.user_id.clone(), cmd.role_ids, Utc::now())?;
 
-        // Persist generated assignments
-        for assignment in &assignments {
-            self.assignment_repo.save(assignment).await?;
-        }
+        // Persist generated assignments in batch
+        self.assignment_repo.save_all(&assignments).await?;
 
         // Persist updated request status
         self.access_request_repo.save(&request).await?;
@@ -412,5 +417,47 @@ mod tests {
             .await
             .expect("owner can view own request");
         assert_eq!(fetched.id, req.id);
+    }
+
+    #[tokio::test]
+    async fn test_submit_allowed_after_rejection() {
+        let (service, admin, _) = make_test_fixture();
+        let user = UserId::try_new("rejected_then_retry").unwrap();
+
+        let req = service
+            .submit(SubmitAccessRequestCommand::new(user.clone(), None, None))
+            .await
+            .unwrap();
+
+        service
+            .reject(
+                &admin,
+                RejectAccessRequestCommand::new(req.id, Some("Missing info".into())),
+            )
+            .await
+            .expect("reject ok");
+
+        // Now user can submit again because the active request invariant checks find_active_by_user
+        let second = service
+            .submit(SubmitAccessRequestCommand::new(user.clone(), None, None))
+            .await;
+        assert!(second.is_ok(), "submit after rejection must succeed");
+    }
+
+    #[tokio::test]
+    async fn test_approve_empty_roles_fails() {
+        let (service, admin, _) = make_test_fixture();
+        let user = UserId::try_new("user_empty_roles").unwrap();
+
+        let req = service
+            .submit(SubmitAccessRequestCommand::new(user, None, None))
+            .await
+            .unwrap();
+
+        let res = service
+            .approve(&admin, ApproveAccessRequestCommand::new(req.id, vec![]))
+            .await;
+
+        assert!(matches!(res, Err(ApplicationError::Domain(DomainError::Validation(_)))));
     }
 }

@@ -128,6 +128,74 @@ impl RoleRepository for SqlxRoleRepository {
         }
     }
 
+    fn find_by_ids(
+        &self,
+        ids: &[RoleId],
+    ) -> impl Future<Output = Result<Vec<Role>, DomainError>> + Send {
+        let pool = self.pool.clone();
+        let role_uuids: Vec<Uuid> = ids.iter().map(|id| *id.as_ref()).collect();
+        async move {
+            if role_uuids.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            let role_rows = sqlx::query(
+                r#"
+                SELECT id, name, description
+                FROM roles
+                WHERE id = ANY($1)
+                "#,
+            )
+            .bind(&role_uuids)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| DomainError::Storage(e.to_string()))?;
+
+            if role_rows.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            let perm_rows = sqlx::query(
+                r#"
+                SELECT role_id, action, document_type_id
+                FROM role_permissions
+                WHERE role_id = ANY($1)
+                ORDER BY created_at ASC
+                "#,
+            )
+            .bind(&role_uuids)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| DomainError::Storage(e.to_string()))?;
+
+            let mut perms_by_role: HashMap<Uuid, Vec<Permission>> = HashMap::new();
+            for p_row in perm_rows {
+                let role_uuid: Uuid = p_row.get("role_id");
+                let action: String = p_row.get("action");
+                let doc_type: Option<String> = p_row.get("document_type_id");
+                let perm = permission_from_db(&action, doc_type)?;
+                perms_by_role.entry(role_uuid).or_default().push(perm);
+            }
+
+            let mut roles = Vec::with_capacity(role_rows.len());
+            for r_row in role_rows {
+                let r_uuid: Uuid = r_row.get("id");
+                let name: String = r_row.get("name");
+                let description: Option<String> = r_row.get("description");
+                let permissions = perms_by_role.remove(&r_uuid).unwrap_or_default();
+
+                roles.push(Role {
+                    id: RoleId::new(r_uuid),
+                    name,
+                    description,
+                    permissions,
+                });
+            }
+
+            Ok(roles)
+        }
+    }
+
     fn find_by_name(
         &self,
         name: &str,

@@ -348,6 +348,24 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
 > **AI agents**: when you make a non-obvious decision during implementation, append an entry here.
 > Format: `## YYYY-MM-DD — Topic` followed by bullet points.
 
+## 2026-09-29 — Cleaned Domain & Application TODOs and Performance Batching
+
+- **Enforced Access Request Role Bounds**:
+  - Defined `AccessRequest::MAX_ROLES = 50`.
+  - In `AccessRequest::approve`, validate that assigned roles are non-empty and within bounds, raising `DomainError::Validation`.
+- **Targeted Active Request Checking (`find_active_by_user`)**:
+  - Replaced the flawed `find_by_user` (which checked `ORDER BY requested_at DESC LIMIT 1`) with `find_active_by_user` (`WHERE user_id = $1 AND status IN ('pending', 'approved')`).
+  - Ensures rejected requests do not mask or accidentally bypass active requests, and allows users to resubmit after rejection.
+- **Batch Role Validation & Assignment Insertion**:
+  - Added `RoleRepository::find_by_ids` to eliminate N+1 sequential database roundtrips during access request approvals.
+  - Added `UserRoleAssignmentRepository::save_all` to batch persist role assignments in a single query via `sqlx::QueryBuilder`.
+- **Cleaned Document Service & Enrichment Types**:
+  - Removed outdated TODOs in `ports.rs` and `documents.rs`.
+  - Replaced `populate: Option<Vec<AttributeId>>` with borrowed slice `populate: &[AttributeId]` in `DocumentsServiceImpl::enrich`.
+  - Explicitly typed `relation_map: RelationMap` using `domain::content::RelationMap`.
+  - Documented partial PATCH field replacement semantics where `ContentValue::Null` explicitly clears optional fields.
+
+
 
 
 

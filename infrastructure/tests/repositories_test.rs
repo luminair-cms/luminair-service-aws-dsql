@@ -69,6 +69,13 @@ async fn test_role_repository_crud() {
     assert!(all.iter().any(|r| r.name == "editor"));
     assert!(all.iter().any(|r| r.name == "viewer"));
 
+    // 2b. Verify find_by_ids batch query
+    let editor_id = RoleId::new(ROLE_EDITOR_ID);
+    let batch_roles = repo.find_by_ids(&[admin_id, editor_id]).await.unwrap();
+    assert_eq!(batch_roles.len(), 2);
+    assert!(batch_roles.iter().any(|r| r.id == admin_id));
+    assert!(batch_roles.iter().any(|r| r.id == editor_id));
+
     // 3. Create a custom role with document-specific permissions
     let custom_id = RoleId::new(Uuid::now_v7());
     let article_type = DocumentTypeId::try_new("article").unwrap();
@@ -180,6 +187,28 @@ async fn test_user_role_assignment_repository_crud() {
     let remaining = repo.find_by_user(&user_id).await.unwrap();
     assert_eq!(remaining.len(), 1);
     assert_eq!(remaining[0].role_id, editor_role_id);
+
+    // 4. Batch save assignments with save_all
+    let batch_user = UserId::try_new(format!("batch-user-{}", Uuid::now_v7())).unwrap();
+    let batch_assignments = vec![
+        UserRoleAssignment {
+            id: UserRoleAssignmentId::new(Uuid::now_v7()),
+            user_id: batch_user.clone(),
+            role_id: admin_role_id,
+            granted_at: Utc::now(),
+            granted_by: None,
+        },
+        UserRoleAssignment {
+            id: UserRoleAssignmentId::new(Uuid::now_v7()),
+            user_id: batch_user.clone(),
+            role_id: editor_role_id,
+            granted_at: Utc::now(),
+            granted_by: Some(granter),
+        },
+    ];
+    repo.save_all(&batch_assignments).await.unwrap();
+    let batch_found = repo.find_by_user(&batch_user).await.unwrap();
+    assert_eq!(batch_found.len(), 2);
 }
 
 #[tokio::test]
@@ -219,6 +248,11 @@ async fn test_access_request_repository_crud() {
         .expect("request by user exists");
     assert_eq!(by_user.id, request.id);
 
+    // 2b. Check find_active_by_user
+    let active = repo.find_active_by_user(&user_id).await.unwrap();
+    assert!(active.is_some());
+    assert_eq!(active.unwrap().id, request.id);
+
     // 3. Find pending
     let pending = repo.find_pending().await.unwrap();
     assert!(pending.iter().any(|r| r.id == request.id));
@@ -236,4 +270,9 @@ async fn test_access_request_repository_crud() {
 
     assert_eq!(approved.reviewed_by, Some(admin_user));
     assert_eq!(approved.assigned_roles, roles);
+
+    // Active request remains findable in Approved state
+    let active_approved = repo.find_active_by_user(&user_id).await.unwrap();
+    assert!(active_approved.is_some());
+    assert_eq!(active_approved.unwrap().id, request.id);
 }

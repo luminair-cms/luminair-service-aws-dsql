@@ -21,6 +21,8 @@ pub struct AccessRequest {
 }
 
 impl AccessRequest {
+    pub const MAX_ROLES: usize = 50;
+
     pub fn new(
         user_id: UserId,
         email: Option<Email>,
@@ -50,6 +52,20 @@ impl AccessRequest {
             return Err(DomainError::InvalidStateTransition {
                 reason: format!("cannot approve access request in {:?} state", self.status),
             });
+        }
+
+        if roles.is_empty() {
+            return Err(DomainError::Validation(
+                "at least one role must be assigned when approving an access request".to_string(),
+            ));
+        }
+
+        if roles.len() > Self::MAX_ROLES {
+            return Err(DomainError::Validation(format!(
+                "cannot assign more than {} roles to an access request (received {})",
+                Self::MAX_ROLES,
+                roles.len()
+            )));
         }
 
         self.status = AccessRequestStatus::Approved;
@@ -214,5 +230,24 @@ mod tests {
         let (mut req2, _, now2) = make_test_request();
         req2.reject(admin, None, now2).unwrap();
         assert!(!req2.is_active()); // Rejected
+    }
+
+    #[test]
+    fn test_approve_empty_roles_fails() {
+        let (mut req, _, now) = make_test_request();
+        let admin = UserId::try_new("admin").unwrap();
+        let res = req.approve(admin, vec![], now);
+        assert!(matches!(res, Err(DomainError::Validation(_))));
+    }
+
+    #[test]
+    fn test_approve_exceeds_max_roles_fails() {
+        let (mut req, _, now) = make_test_request();
+        let admin = UserId::try_new("admin").unwrap();
+        let roles: Vec<RoleId> = (0..AccessRequest::MAX_ROLES + 1)
+            .map(|_| RoleId::new(Uuid::now_v7()))
+            .collect();
+        let res = req.approve(admin, roles, now);
+        assert!(matches!(res, Err(DomainError::Validation(_))));
     }
 }

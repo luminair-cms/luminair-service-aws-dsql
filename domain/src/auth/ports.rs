@@ -11,6 +11,11 @@ pub trait RoleRepository: Send + Sync {
         id: RoleId,
     ) -> impl Future<Output = Result<Option<Role>, DomainError>> + Send;
 
+    fn find_by_ids(
+        &self,
+        ids: &[RoleId],
+    ) -> impl Future<Output = Result<Vec<Role>, DomainError>> + Send;
+
     fn find_by_name(
         &self,
         name: &str,
@@ -37,6 +42,11 @@ pub trait UserRoleAssignmentRepository: Send + Sync {
         assignment: &UserRoleAssignment,
     ) -> impl Future<Output = Result<(), DomainError>> + Send;
 
+    fn save_all(
+        &self,
+        assignments: &[UserRoleAssignment],
+    ) -> impl Future<Output = Result<(), DomainError>> + Send;
+
     fn delete(
         &self,
         id: UserRoleAssignmentId,
@@ -50,6 +60,11 @@ pub trait AccessRequestRepository: Send + Sync {
     ) -> impl Future<Output = Result<Option<AccessRequest>, DomainError>> + Send;
 
     fn find_by_user(
+        &self,
+        user_id: &UserId,
+    ) -> impl Future<Output = Result<Option<AccessRequest>, DomainError>> + Send;
+
+    fn find_active_by_user(
         &self,
         user_id: &UserId,
     ) -> impl Future<Output = Result<Option<AccessRequest>, DomainError>> + Send;

@@ -7,7 +7,7 @@ use domain::auth::{
     RoleId, UserId, UserRoleAssignment, UserRoleAssignmentId, UserRoleAssignmentRepository,
 };
 use domain::errors::DomainError;
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, QueryBuilder, Row};
 use uuid::Uuid;
 
 /// Sqlx-backed repository for user role assignments.
@@ -123,6 +123,42 @@ impl UserRoleAssignmentRepository for SqlxUserRoleAssignmentRepository {
             .execute(&pool)
             .await
             .map_err(|e| DomainError::Storage(e.to_string()))?;
+
+            Ok(())
+        }
+    }
+
+    fn save_all(
+        &self,
+        assignments: &[UserRoleAssignment],
+    ) -> impl Future<Output = Result<(), DomainError>> + Send {
+        let pool = self.pool.clone();
+        let assignments = assignments.to_vec();
+        async move {
+            if assignments.is_empty() {
+                return Ok(());
+            }
+
+            let mut qb = QueryBuilder::new(
+                "INSERT INTO user_role_assignments (id, user_id, role_id, granted_at, granted_by) ",
+            );
+            qb.push_values(&assignments, |mut b, assignment| {
+                b.push_bind(*assignment.id.as_ref())
+                    .push_bind(assignment.user_id.as_ref().to_string())
+                    .push_bind(*assignment.role_id.as_ref())
+                    .push_bind(assignment.granted_at)
+                    .push_bind(assignment.granted_by.as_ref().map(|u| u.as_ref().to_string()));
+            });
+            qb.push(
+                " ON CONFLICT (user_id, role_id) DO UPDATE SET \
+                 granted_at = EXCLUDED.granted_at, \
+                 granted_by = EXCLUDED.granted_by",
+            );
+
+            qb.build()
+                .execute(&pool)
+                .await
+                .map_err(|e| DomainError::Storage(e.to_string()))?;
 
             Ok(())
         }

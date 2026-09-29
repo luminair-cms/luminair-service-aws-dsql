@@ -214,6 +214,13 @@ fn map_domain_error(err: DomainError) -> Response {
             reason,
             None,
         ),
+        DomainError::Validation(msg) => problem_response(
+            StatusCode::BAD_REQUEST,
+            "https://luminair.io/errors/validation-error",
+            "Validation Failed",
+            msg,
+            None,
+        ),
         DomainError::Storage(msg) => problem_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "https://luminair.io/errors/internal-error",
