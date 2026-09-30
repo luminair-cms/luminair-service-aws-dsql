@@ -12,9 +12,8 @@ use domain::content::{
 use domain::errors::DomainError;
 use domain::schema::{
     AttributeId, DocumentKind, DocumentTypeId, InverseRelationKind, OwnerRelationKind,
-    SchemaRegistry,
 };
-use domain::system::SystemConfig;
+use domain::system::SystemContext;
 
 use crate::commands::documents::*;
 use crate::context::CallerContext;
@@ -75,23 +74,17 @@ pub trait DocumentsService: Send + Sync + 'static {
 /// Generic implementation of `DocumentsService` monomorphized over repository adapters.
 pub struct DocumentsServiceImpl<R> {
     pub instance_repo: Arc<R>,
-    pub schema_registry: Arc<SchemaRegistry>,
-    pub system_config: Arc<SystemConfig>,
+    pub context: &'static SystemContext,
 }
 
 impl<R> DocumentsServiceImpl<R>
 where
     R: DocumentInstanceRepository + 'static,
 {
-    pub fn new(
-        instance_repo: Arc<R>,
-        schema_registry: Arc<SchemaRegistry>,
-        system_config: Arc<SystemConfig>,
-    ) -> Self {
+    pub fn new(instance_repo: Arc<R>, context: &'static SystemContext) -> Self {
         Self {
             instance_repo,
-            schema_registry,
-            system_config,
+            context,
         }
     }
 
@@ -100,7 +93,7 @@ where
     /// 2. Stitches relations in-memory to each corresponding document instance.
     pub async fn enrich(
         &self,
-        type_id: DocumentTypeId,
+        type_id: &'static DocumentTypeId,
         populate: &[AttributeId],
         instances: Vec<DocumentInstance>,
     ) -> Result<Vec<DocumentInstance>, ApplicationError> {
@@ -144,7 +137,8 @@ where
     ) -> Result<(), ApplicationError> {
         for (attr, action) in relations {
             let rel = self
-                .schema_registry
+                .context
+                .schema
                 .find_relation_for_attr(type_id, &attr)
                 .ok_or_else(|| {
                     ApplicationError::Validation(vec![format!(
@@ -220,8 +214,9 @@ where
             None,
         )?;
 
-        self.schema_registry
-            .find_type(&cmd.document_type)
+        self.context
+            .schema
+            .find_type(cmd.document_type)
             .ok_or_else(|| {
                 ApplicationError::Domain(DomainError::DocumentTypeNotFound(
                     cmd.document_type.clone(),
@@ -231,15 +226,11 @@ where
         // Sequential fetch for MVP
         let page = self
             .instance_repo
-            .find_by_type(
-                cmd.document_type.clone(),
-                cmd.pagination,
-                cmd.filters.clone(),
-            )
+            .find_by_type(cmd.document_type, cmd.pagination, cmd.filters.clone())
             .await?;
         let count = self
             .instance_repo
-            .count(cmd.document_type.clone(), cmd.filters)
+            .count(cmd.document_type, cmd.filters)
             .await?;
 
         // Two-phase batch relation enrichment
@@ -261,7 +252,7 @@ where
     ) -> Result<Option<DocumentInstance>, ApplicationError> {
         let instance = self
             .instance_repo
-            .find_by_id(cmd.document_type.clone(), cmd.document_instance_id)
+            .find_by_id(cmd.document_type, cmd.document_instance_id)
             .await?;
 
         match instance {
@@ -294,8 +285,9 @@ where
         )?;
 
         let doc_type = self
-            .schema_registry
-            .find_type(&cmd.document_type)
+            .context
+            .schema
+            .find_type(cmd.document_type)
             .ok_or_else(|| {
                 ApplicationError::Domain(DomainError::DocumentTypeNotFound(
                     cmd.document_type.clone(),
@@ -306,11 +298,11 @@ where
         if doc_type.kind == DocumentKind::SingleType
             && self
                 .instance_repo
-                .exists_for_type(cmd.document_type.clone())
+                .exists_for_type(cmd.document_type)
                 .await?
         {
             return Err(ApplicationError::Domain(
-                DomainError::SingleTypeAlreadyExists(cmd.document_type),
+                DomainError::SingleTypeAlreadyExists(cmd.document_type.clone()),
             ));
         }
 
@@ -322,13 +314,13 @@ where
         instance.content.fields = cmd.fields;
 
         // Apply and validate relational mutations
-        self.validate_and_apply_relations(&cmd.document_type, &mut instance, cmd.relations)?;
+        self.validate_and_apply_relations(cmd.document_type, &mut instance, cmd.relations)?;
 
         // Schema constraint and required field validation
-        if let Err(errs) = self.schema_registry.validate_content(
+        if let Err(errs) = self.context.schema.validate_content(
             &instance.document_type_id,
             &instance.content,
-            &self.system_config,
+            &self.context.config,
         ) {
             let messages: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
             return Err(ApplicationError::Validation(messages));
@@ -354,7 +346,7 @@ where
     ) -> Result<DocumentInstance, ApplicationError> {
         let mut instance = self
             .instance_repo
-            .find_by_id(cmd.document_type.clone(), cmd.document_instance_id)
+            .find_by_id(cmd.document_type, cmd.document_instance_id)
             .await?
             .ok_or(ApplicationError::Domain(
                 DomainError::DocumentInstanceNotFound(cmd.document_instance_id),
@@ -372,15 +364,15 @@ where
         }
 
         // Apply and validate relational mutations
-        self.validate_and_apply_relations(&cmd.document_type, &mut instance, cmd.relations)?;
+        self.validate_and_apply_relations(cmd.document_type, &mut instance, cmd.relations)?;
 
         instance.touch(Some(caller.user_id.clone()), Utc::now());
 
         // Revalidate against schema constraints
-        if let Err(errs) = self.schema_registry.validate_content(
+        if let Err(errs) = self.context.schema.validate_content(
             &instance.document_type_id,
             &instance.content,
-            &self.system_config,
+            &self.context.config,
         ) {
             let messages: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
             return Err(ApplicationError::Validation(messages));
@@ -418,7 +410,7 @@ where
         )?;
 
         self.instance_repo
-            .delete(instance.document_type_id, cmd.document_instance_id)
+            .delete(cmd.document_type, cmd.document_instance_id)
             .await?;
         Ok(())
     }
@@ -442,11 +434,12 @@ where
         )?;
 
         let doc_type = self
-            .schema_registry
-            .find_type(&instance.document_type_id)
+            .context
+            .schema
+            .find_type(cmd.document_type)
             .ok_or_else(|| {
                 ApplicationError::Domain(DomainError::DocumentTypeNotFound(
-                    instance.document_type_id.clone(),
+                    cmd.document_type.clone(),
                 ))
             })?;
 
@@ -483,11 +476,12 @@ where
         )?;
 
         let doc_type = self
-            .schema_registry
-            .find_type(&instance.document_type_id)
+            .context
+            .schema
+            .find_type(cmd.document_type)
             .ok_or_else(|| {
                 ApplicationError::Domain(DomainError::DocumentTypeNotFound(
-                    instance.document_type_id.clone(),
+                    cmd.document_type.clone(),
                 ))
             })?;
 
@@ -517,9 +511,9 @@ mod tests {
     };
     use domain::schema::{
         DocumentType, DocumentTypeInfo, DocumentTypeOptions, FieldDefinition, FieldType,
-        PrimitiveType,
+        PrimitiveType, SchemaRegistry,
     };
-    use domain::system::{LocaleId, SystemConfigId};
+    use domain::system::{LocaleId, SystemConfig, SystemConfigId, SystemContext};
     use indexmap::IndexSet;
     use uuid::Uuid;
 
@@ -529,7 +523,7 @@ mod tests {
         kind: DocumentKind,
     ) -> (
         DocumentsServiceImpl<FakeDocumentInstanceRepository>,
-        DocumentType,
+        &'static DocumentType,
         CallerContext,
         AttributeId,
     ) {
@@ -546,7 +540,7 @@ mod tests {
         });
 
         let doc_type = DocumentType {
-            id: type_id,
+            id: type_id.clone(),
             kind,
             info: DocumentTypeInfo {
                 title: "Articles".into(),
@@ -561,17 +555,18 @@ mod tests {
         };
 
         let en = LocaleId::try_new("en").unwrap();
-        let config = Arc::new(
-            SystemConfig::new(SystemConfigId::new(Uuid::now_v7()), vec![en.clone()], en).unwrap(),
-        );
+        let config =
+            SystemConfig::new(SystemConfigId::new(Uuid::now_v7()), vec![en.clone()], en).unwrap();
 
-        let schema_registry = Arc::new(SchemaRegistry::new(vec![doc_type.clone()], vec![]));
+        let schema = SchemaRegistry::new(vec![doc_type], vec![]);
+        let context: &'static SystemContext = Box::leak(Box::new(SystemContext { schema, config }));
+        let leaked_doc_type = context.schema.find_type(&type_id).unwrap();
+
         let instance_repo = Arc::new(FakeDocumentInstanceRepository::new());
-
-        let service = DocumentsServiceImpl::new(instance_repo, schema_registry, config);
+        let service = DocumentsServiceImpl::new(instance_repo, context);
 
         let caller = CallerContext::system();
-        (service, doc_type, caller, title_attr)
+        (service, leaked_doc_type, caller, title_attr)
     }
 
     #[tokio::test]
@@ -587,18 +582,12 @@ mod tests {
         );
 
         let created = service
-            .create(
-                &caller,
-                CreateDocumentCommand::new(doc_type.id.clone(), fields),
-            )
+            .create(&caller, CreateDocumentCommand::new(&doc_type.id, fields))
             .await
             .expect("create success");
 
         let fetched = service
-            .find_by_id(
-                &caller,
-                FindByIdCommand::new(doc_type.id.clone(), created.id),
-            )
+            .find_by_id(&caller, FindByIdCommand::new(&doc_type.id, created.id))
             .await
             .expect("find success")
             .expect("found document");
@@ -623,17 +612,14 @@ mod tests {
         service
             .create(
                 &caller,
-                CreateDocumentCommand::new(doc_type.id.clone(), fields.clone()),
+                CreateDocumentCommand::new(&doc_type.id, fields.clone()),
             )
             .await
             .expect("first create succeeds");
 
         // Second creation must fail with SingleTypeAlreadyExists
         let second = service
-            .create(
-                &caller,
-                CreateDocumentCommand::new(doc_type.id.clone(), fields),
-            )
+            .create(&caller, CreateDocumentCommand::new(&doc_type.id, fields))
             .await;
 
         assert!(matches!(
@@ -655,10 +641,7 @@ mod tests {
         );
 
         let inst = service
-            .create(
-                &caller,
-                CreateDocumentCommand::new(doc_type.id.clone(), fields),
-            )
+            .create(&caller, CreateDocumentCommand::new(&doc_type.id, fields))
             .await
             .unwrap();
 
@@ -674,7 +657,7 @@ mod tests {
         );
 
         // Query with populate
-        let cmd = FindDocumentsCommand::new(doc_type.id.clone(), Pagination::default())
+        let cmd = FindDocumentsCommand::new(&doc_type.id, Pagination::default())
             .with_populate(vec![rel_attr.clone()]);
 
         let (items, count) = service.find(&caller, cmd).await.expect("find ok");
@@ -703,10 +686,7 @@ mod tests {
         );
 
         let created = service
-            .create(
-                &caller,
-                CreateDocumentCommand::new(doc_type.id.clone(), fields),
-            )
+            .create(&caller, CreateDocumentCommand::new(&doc_type.id, fields))
             .await
             .unwrap();
         assert_eq!(created.audit.version, 1);
@@ -722,7 +702,7 @@ mod tests {
         let updated = service
             .update(
                 &caller,
-                UpdateDocumentCommand::new(created.id, doc_type.id.clone(), update_fields),
+                UpdateDocumentCommand::new(created.id, &doc_type.id, update_fields),
             )
             .await
             .expect("update success");
@@ -743,10 +723,7 @@ mod tests {
         );
 
         let created = service
-            .create(
-                &caller,
-                CreateDocumentCommand::new(doc_type.id.clone(), fields),
-            )
+            .create(&caller, CreateDocumentCommand::new(&doc_type.id, fields))
             .await
             .unwrap();
 
@@ -754,7 +731,7 @@ mod tests {
         let published = service
             .publish(
                 &caller,
-                PublishDocumentCommand::new(created.id, doc_type.id.clone()),
+                PublishDocumentCommand::new(created.id, &doc_type.id),
             )
             .await
             .expect("publish success");
@@ -769,7 +746,7 @@ mod tests {
         let unpublished = service
             .unpublish(
                 &caller,
-                UnpublishDocumentCommand::new(created.id, doc_type.id.clone()),
+                UnpublishDocumentCommand::new(created.id, &doc_type.id),
             )
             .await
             .expect("unpublish success");
@@ -802,7 +779,7 @@ mod tests {
         let res = service
             .create(
                 &unauthorized_caller,
-                CreateDocumentCommand::new(doc_type.id.clone(), fields),
+                CreateDocumentCommand::new(&doc_type.id, fields),
             )
             .await;
 
@@ -825,7 +802,7 @@ mod tests {
         });
 
         let doc_type = DocumentType {
-            id: type_id,
+            id: type_id.clone(),
             kind: DocumentKind::Collection,
             info: DocumentTypeInfo {
                 title: "Simple".into(),
@@ -840,18 +817,20 @@ mod tests {
         };
 
         let en = LocaleId::try_new("en").unwrap();
-        let config = Arc::new(
-            SystemConfig::new(SystemConfigId::new(Uuid::now_v7()), vec![en.clone()], en).unwrap(),
-        );
-        let schema_registry = Arc::new(SchemaRegistry::new(vec![doc_type.clone()], vec![]));
+        let config =
+            SystemConfig::new(SystemConfigId::new(Uuid::now_v7()), vec![en.clone()], en).unwrap();
+        let schema = SchemaRegistry::new(vec![doc_type], vec![]);
+        let context: &'static SystemContext = Box::leak(Box::new(SystemContext { schema, config }));
+        let leaked_doc_type = context.schema.find_type(&type_id).unwrap();
+
         let instance_repo = Arc::new(FakeDocumentInstanceRepository::new());
-        let service = DocumentsServiceImpl::new(instance_repo, schema_registry, config);
+        let service = DocumentsServiceImpl::new(instance_repo, context);
         let caller = CallerContext::system();
 
         let created = service
             .create(
                 &caller,
-                CreateDocumentCommand::new(doc_type.id.clone(), HashMap::new()),
+                CreateDocumentCommand::new(&leaked_doc_type.id, HashMap::new()),
             )
             .await
             .expect("create succeeds");
@@ -859,7 +838,7 @@ mod tests {
         let publish_result = service
             .publish(
                 &caller,
-                PublishDocumentCommand::new(created.id, doc_type.id.clone()),
+                PublishDocumentCommand::new(created.id, &leaked_doc_type.id),
             )
             .await;
 
@@ -882,27 +861,21 @@ mod tests {
             ))),
         );
         let created = service
-            .create(
-                &caller,
-                CreateDocumentCommand::new(doc_type.id.clone(), fields),
-            )
+            .create(&caller, CreateDocumentCommand::new(&doc_type.id, fields))
             .await
             .expect("create succeeds");
 
         service
             .delete(
                 &caller,
-                DeleteDocumentCommand::new(created.id, doc_type.id.clone()),
+                DeleteDocumentCommand::new(created.id, &doc_type.id),
             )
             .await
             .expect("delete succeeds");
 
         // After delete: instance is gone
         let found = service
-            .find_by_id(
-                &caller,
-                FindByIdCommand::new(doc_type.id.clone(), created.id),
-            )
+            .find_by_id(&caller, FindByIdCommand::new(&doc_type.id, created.id))
             .await
             .expect("find_by_id returns Ok");
         assert!(found.is_none(), "instance should be gone after delete");
@@ -910,8 +883,8 @@ mod tests {
 
     fn make_relational_fixture() -> (
         DocumentsServiceImpl<FakeDocumentInstanceRepository>,
-        DocumentType,
-        DocumentType,
+        &'static DocumentType,
+        &'static DocumentType,
         CallerContext,
         AttributeId,
         AttributeId,
@@ -997,22 +970,22 @@ mod tests {
         };
 
         let en = LocaleId::try_new("en").unwrap();
-        let config = Arc::new(
-            SystemConfig::new(SystemConfigId::new(Uuid::now_v7()), vec![en.clone()], en).unwrap(),
-        );
+        let config =
+            SystemConfig::new(SystemConfigId::new(Uuid::now_v7()), vec![en.clone()], en).unwrap();
 
-        let schema_registry = Arc::new(SchemaRegistry::new(
-            vec![article_type.clone(), tag_type.clone()],
-            vec![tags_rel, cat_rel],
-        ));
+        let schema = SchemaRegistry::new(vec![article_type, tag_type], vec![tags_rel, cat_rel]);
+        let context: &'static SystemContext = Box::leak(Box::new(SystemContext { schema, config }));
+        let leaked_article = context.schema.find_type(&article_type_id).unwrap();
+        let leaked_tag = context.schema.find_type(&tag_type_id).unwrap();
+
         let instance_repo = Arc::new(FakeDocumentInstanceRepository::new());
-        let service = DocumentsServiceImpl::new(instance_repo, schema_registry, config);
+        let service = DocumentsServiceImpl::new(instance_repo, context);
         let caller = CallerContext::system();
 
         (
             service,
-            article_type,
-            tag_type,
+            leaked_article,
+            leaked_tag,
             caller,
             title_attr,
             tags_attr,
@@ -1034,7 +1007,7 @@ mod tests {
         let tag = service
             .create(
                 &caller,
-                CreateDocumentCommand::new(tag_type.id.clone(), tag_fields),
+                CreateDocumentCommand::new(&tag_type.id, tag_fields),
             )
             .await
             .unwrap();
@@ -1051,7 +1024,7 @@ mod tests {
         let mut relations = HashMap::new();
         relations.insert(tags_attr.clone(), RelationAction::Connect(vec![tag.id]));
 
-        let cmd = CreateDocumentCommand::new(article_type.id.clone(), article_fields)
+        let cmd = CreateDocumentCommand::new(&article_type.id, article_fields)
             .with_relations(relations)
             .with_populate(vec![tags_attr.clone()]);
 
@@ -1083,7 +1056,7 @@ mod tests {
             .create(
                 &caller,
                 CreateDocumentCommand::new(
-                    tag_type.id.clone(),
+                    &tag_type.id,
                     HashMap::from([(
                         AttributeId::try_new("name").unwrap(),
                         ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text(
@@ -1099,7 +1072,7 @@ mod tests {
             .create(
                 &caller,
                 CreateDocumentCommand::new(
-                    tag_type.id.clone(),
+                    &tag_type.id,
                     HashMap::from([(
                         AttributeId::try_new("name").unwrap(),
                         ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text(
@@ -1116,7 +1089,7 @@ mod tests {
             .create(
                 &caller,
                 CreateDocumentCommand::new(
-                    article_type.id.clone(),
+                    &article_type.id,
                     HashMap::from([(
                         title_attr.clone(),
                         ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text(
@@ -1129,13 +1102,12 @@ mod tests {
             .unwrap();
 
         // 1. Update with Set [tag1, tag2] and populate
-        let update_cmd =
-            UpdateDocumentCommand::new(article.id, article_type.id.clone(), HashMap::new())
-                .with_relations(HashMap::from([(
-                    tags_attr.clone(),
-                    RelationAction::Set(vec![tag1.id, tag2.id]),
-                )]))
-                .with_populate(vec![tags_attr.clone()]);
+        let update_cmd = UpdateDocumentCommand::new(article.id, &article_type.id, HashMap::new())
+            .with_relations(HashMap::from([(
+                tags_attr.clone(),
+                RelationAction::Set(vec![tag1.id, tag2.id]),
+            )]))
+            .with_populate(vec![tags_attr.clone()]);
 
         let updated = service.update(&caller, update_cmd).await.unwrap();
         assert_eq!(
@@ -1145,7 +1117,7 @@ mod tests {
 
         // 2. Update with Disconnect [tag1]
         let disconnect_cmd =
-            UpdateDocumentCommand::new(article.id, article_type.id.clone(), HashMap::new())
+            UpdateDocumentCommand::new(article.id, &article_type.id, HashMap::new())
                 .with_relations(HashMap::from([(
                     tags_attr.clone(),
                     RelationAction::Disconnect(vec![tag1.id]),
@@ -1158,10 +1130,9 @@ mod tests {
         assert_eq!(remaining[0].id, tag2.id);
 
         // 3. Update with Unset
-        let unset_cmd =
-            UpdateDocumentCommand::new(article.id, article_type.id.clone(), HashMap::new())
-                .with_relations(HashMap::from([(tags_attr.clone(), RelationAction::Unset)]))
-                .with_populate(vec![tags_attr.clone()]);
+        let unset_cmd = UpdateDocumentCommand::new(article.id, &article_type.id, HashMap::new())
+            .with_relations(HashMap::from([(tags_attr.clone(), RelationAction::Unset)]))
+            .with_populate(vec![tags_attr.clone()]);
 
         let updated3 = service.update(&caller, unset_cmd).await.unwrap();
         assert!(!updated3.relations.contains_key(&tags_attr));
@@ -1175,7 +1146,7 @@ mod tests {
         let cat2_id = DocumentInstanceId::new(Uuid::now_v7());
 
         let cmd = CreateDocumentCommand::new(
-            article_type.id.clone(),
+            &article_type.id,
             HashMap::from([(
                 title_attr,
                 ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text(

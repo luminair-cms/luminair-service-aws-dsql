@@ -7,4 +7,4 @@ pub mod config;
 pub mod container;
 
 pub use config::{ConfigError, ServerConfig};
-pub use container::{AppContainer, BootstrapError};
+pub use container::{AppContainer, AppContainerBuilder, BootstrapError, ContainerBuildError};

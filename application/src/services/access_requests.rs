@@ -458,6 +458,9 @@ mod tests {
             .approve(&admin, ApproveAccessRequestCommand::new(req.id, vec![]))
             .await;
 
-        assert!(matches!(res, Err(ApplicationError::Domain(DomainError::Validation(_)))));
+        assert!(matches!(
+            res,
+            Err(ApplicationError::Domain(DomainError::Validation(_)))
+        ));
     }
 }

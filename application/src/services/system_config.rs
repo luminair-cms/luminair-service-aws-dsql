@@ -1,8 +1,6 @@
 //! System configuration application service.
 
-use std::sync::Arc;
-
-use domain::system::{LocaleId, SystemConfig};
+use domain::system::{LocaleId, SystemConfig, SystemContext};
 
 /// Port trait defining operations for inspecting system configuration.
 pub trait SystemConfigService: Send + Sync + 'static {
@@ -26,56 +24,60 @@ pub trait SystemConfigService: Send + Sync + 'static {
 }
 
 /// In-memory implementation of `SystemConfigService` wrapping the startup configuration.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct SystemConfigServiceImpl {
-    config: Arc<SystemConfig>,
+    context: &'static SystemContext,
 }
 
 impl SystemConfigServiceImpl {
     /// Creates a new `SystemConfigServiceImpl` wrapping the loaded configuration.
-    pub fn new(config: Arc<SystemConfig>) -> Self {
-        Self { config }
+    pub fn new(context: &'static SystemContext) -> Self {
+        Self { context }
     }
 }
 
 impl SystemConfigService for SystemConfigServiceImpl {
     fn get_config(&self) -> &SystemConfig {
-        &self.config
+        &self.context.config
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use domain::schema::SchemaRegistry;
     use domain::system::SystemConfigId;
     use uuid::Uuid;
 
-    fn make_test_config() -> Arc<SystemConfig> {
+    fn make_test_context() -> &'static SystemContext {
         let en = LocaleId::try_new("en").unwrap();
         let uk = LocaleId::try_new("uk").unwrap();
-        Arc::new(
-            SystemConfig::new(
-                SystemConfigId::new(Uuid::now_v7()),
-                vec![en.clone(), uk],
-                en,
-            )
-            .unwrap(),
+        let config = SystemConfig::new(
+            SystemConfigId::new(Uuid::now_v7()),
+            vec![en.clone(), uk],
+            en,
         )
+        .unwrap();
+        let schema = SchemaRegistry::default();
+        Box::leak(Box::new(SystemContext::new(schema, config)))
     }
 
     #[test]
     fn test_get_config_returns_static_configuration() {
-        let config = make_test_config();
-        let service = SystemConfigServiceImpl::new(config.clone());
+        let context = make_test_context();
+        let service = SystemConfigServiceImpl::new(context);
 
-        assert_eq!(service.get_config().id, config.id);
-        assert_eq!(service.get_config().default_locale, config.default_locale);
+        assert_eq!(service.get_config().id, context.config.id);
+        assert_eq!(
+            service.get_config().default_locale,
+            context.config.default_locale
+        );
     }
 
     #[test]
     fn test_is_locale_supported() {
-        let config = make_test_config();
-        let service = SystemConfigServiceImpl::new(config);
+        let context = make_test_context();
+        let service = SystemConfigServiceImpl::new(context);
 
         let en = LocaleId::try_new("en").unwrap();
         let uk = LocaleId::try_new("uk").unwrap();
@@ -88,8 +90,8 @@ mod tests {
 
     #[test]
     fn test_default_and_available_locales() {
-        let config = make_test_config();
-        let service = SystemConfigServiceImpl::new(config);
+        let context = make_test_context();
+        let service = SystemConfigServiceImpl::new(context);
 
         let en = LocaleId::try_new("en").unwrap();
         let uk = LocaleId::try_new("uk").unwrap();

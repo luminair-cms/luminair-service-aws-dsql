@@ -2,7 +2,6 @@
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
-use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use domain::auth::UserId;
@@ -30,11 +29,11 @@ use crate::schema_loader::naming::{
 #[derive(Debug, Clone)]
 pub struct SqlxDocumentInstanceRepository {
     pool: PgPool,
-    schema_registry: Arc<SchemaRegistry>,
+    schema_registry: &'static SchemaRegistry,
 }
 
 impl SqlxDocumentInstanceRepository {
-    pub fn new(pool: PgPool, schema_registry: Arc<SchemaRegistry>) -> Self {
+    pub fn new(pool: PgPool, schema_registry: &'static SchemaRegistry) -> Self {
         Self {
             pool,
             schema_registry,
@@ -297,14 +296,14 @@ fn apply_field_filter(qb: &mut sqlx::QueryBuilder<sqlx::Postgres>, filter: &Fiel
 impl DocumentInstanceRepository for SqlxDocumentInstanceRepository {
     fn find_by_id(
         &self,
-        type_id: DocumentTypeId,
+        type_id: &'static DocumentTypeId,
         id: DocumentInstanceId,
     ) -> impl Future<Output = Result<Option<DocumentInstance>, DomainError>> + Send {
         let pool = self.pool.clone();
-        let schema_reg = self.schema_registry.clone();
+        let schema_reg = self.schema_registry;
         async move {
             let doc_type = schema_reg
-                .find_type(&type_id)
+                .find_type(type_id)
                 .ok_or_else(|| DomainError::DocumentTypeNotFound(type_id.clone()))?;
             let table_name = document_type_to_table_name(doc_type);
 
@@ -343,7 +342,7 @@ impl DocumentInstanceRepository for SqlxDocumentInstanceRepository {
 
             // Relations owned by this document type
             let mut relations = HashMap::new();
-            let rel_views = schema_reg.find_relations_for(&type_id);
+            let rel_views = schema_reg.find_relations_for(type_id);
             for rel in rel_views {
                 let (attr, _kind) = match rel {
                     RelationView::Unidirectional { attr, kind, .. } => (attr, kind),
@@ -423,7 +422,7 @@ impl DocumentInstanceRepository for SqlxDocumentInstanceRepository {
             let instance = DocumentInstance {
                 id,
                 db_row_id: Some(id),
-                document_type_id: type_id,
+                document_type_id: type_id.clone(),
                 content: DocumentContent {
                     fields,
                     publication_state,
@@ -445,15 +444,15 @@ impl DocumentInstanceRepository for SqlxDocumentInstanceRepository {
 
     fn find_by_type(
         &self,
-        type_id: DocumentTypeId,
+        type_id: &'static DocumentTypeId,
         pagination: Pagination,
         filters: Vec<FieldFilter>,
     ) -> impl Future<Output = Result<Page<DocumentInstance>, DomainError>> + Send {
         let pool = self.pool.clone();
-        let schema_reg = self.schema_registry.clone();
+        let schema_reg = self.schema_registry;
         async move {
             let doc_type = schema_reg
-                .find_type(&type_id)
+                .find_type(type_id)
                 .ok_or_else(|| DomainError::DocumentTypeNotFound(type_id.clone()))?;
             let table_name = document_type_to_table_name(doc_type);
 
@@ -555,14 +554,14 @@ impl DocumentInstanceRepository for SqlxDocumentInstanceRepository {
 
     fn count(
         &self,
-        type_id: DocumentTypeId,
+        type_id: &'static DocumentTypeId,
         filters: Vec<FieldFilter>,
     ) -> impl Future<Output = Result<u64, DomainError>> + Send {
         let pool = self.pool.clone();
-        let schema_reg = self.schema_registry.clone();
+        let schema_reg = self.schema_registry;
         async move {
             let doc_type = schema_reg
-                .find_type(&type_id)
+                .find_type(type_id)
                 .ok_or_else(|| DomainError::DocumentTypeNotFound(type_id.clone()))?;
             let table_name = document_type_to_table_name(doc_type);
 
@@ -585,12 +584,12 @@ impl DocumentInstanceRepository for SqlxDocumentInstanceRepository {
 
     fn fetch_relations(
         &self,
-        type_id: DocumentTypeId,
+        type_id: &'static DocumentTypeId,
         attributes: &[AttributeId],
         parent_ids: &[DocumentInstanceId],
     ) -> impl Future<Output = Result<RelationMap, DomainError>> + Send {
         let pool = self.pool.clone();
-        let schema_reg = self.schema_registry.clone();
+        let schema_reg = self.schema_registry;
         let attributes = attributes.to_vec();
         let parent_ids = parent_ids.to_vec();
 
@@ -601,18 +600,18 @@ impl DocumentInstanceRepository for SqlxDocumentInstanceRepository {
             }
 
             let _doc_type = schema_reg
-                .find_type(&type_id)
+                .find_type(type_id)
                 .ok_or_else(|| DomainError::DocumentTypeNotFound(type_id.clone()))?;
 
             let parent_uuids: Vec<Uuid> = parent_ids.iter().map(|id| *id.as_ref()).collect();
 
             for attr in attributes {
-                let rel = match schema_reg.find_relation_for_attr(&type_id, &attr) {
+                let rel = match schema_reg.find_relation_for_attr(type_id, &attr) {
                     Some(r) => r,
                     None => continue,
                 };
 
-                let is_inverse = rel.target_type == type_id;
+                let is_inverse = &rel.target_type == type_id;
                 let owner_doc_type = schema_reg
                     .find_type(&rel.owner_type)
                     .ok_or_else(|| DomainError::DocumentTypeNotFound(rel.owner_type.clone()))?;
@@ -756,7 +755,7 @@ impl DocumentInstanceRepository for SqlxDocumentInstanceRepository {
         instance: &DocumentInstance,
     ) -> impl Future<Output = Result<(), DomainError>> + Send {
         let pool = self.pool.clone();
-        let schema_reg = self.schema_registry.clone();
+        let schema_reg = self.schema_registry;
         let instance = instance.clone();
 
         async move {
@@ -1010,14 +1009,14 @@ impl DocumentInstanceRepository for SqlxDocumentInstanceRepository {
 
     fn delete(
         &self,
-        type_id: DocumentTypeId,
+        type_id: &'static DocumentTypeId,
         id: DocumentInstanceId,
     ) -> impl Future<Output = Result<(), DomainError>> + Send {
         let pool = self.pool.clone();
-        let schema_reg = self.schema_registry.clone();
+        let schema_reg = self.schema_registry;
         async move {
             let doc_type = schema_reg
-                .find_type(&type_id)
+                .find_type(type_id)
                 .ok_or_else(|| DomainError::DocumentTypeNotFound(type_id.clone()))?;
             let table_name = document_type_to_table_name(doc_type);
 
@@ -1038,13 +1037,13 @@ impl DocumentInstanceRepository for SqlxDocumentInstanceRepository {
 
     fn exists_for_type(
         &self,
-        type_id: DocumentTypeId,
+        type_id: &'static DocumentTypeId,
     ) -> impl Future<Output = Result<bool, DomainError>> + Send {
         let pool = self.pool.clone();
-        let schema_reg = self.schema_registry.clone();
+        let schema_reg = self.schema_registry;
         async move {
             let doc_type = schema_reg
-                .find_type(&type_id)
+                .find_type(type_id)
                 .ok_or_else(|| DomainError::DocumentTypeNotFound(type_id.clone()))?;
             let table_name = document_type_to_table_name(doc_type);
 

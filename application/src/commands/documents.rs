@@ -9,7 +9,7 @@ use domain::schema::{AttributeId, DocumentTypeId};
 #[derive(Debug, Clone, PartialEq)]
 pub struct FindDocumentsCommand {
     /// Target document type to query.
-    pub document_type: DocumentTypeId,
+    pub document_type: &'static DocumentTypeId,
     /// Pagination parameters (page number and page size).
     pub pagination: Pagination,
     /// Field filters to apply.
@@ -19,7 +19,7 @@ pub struct FindDocumentsCommand {
 }
 
 impl FindDocumentsCommand {
-    pub fn new(document_type: DocumentTypeId, pagination: Pagination) -> Self {
+    pub fn new(document_type: &'static DocumentTypeId, pagination: Pagination) -> Self {
         Self {
             document_type,
             pagination,
@@ -43,7 +43,7 @@ impl FindDocumentsCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FindByIdCommand {
     /// Document type of the target document.
-    pub document_type: DocumentTypeId,
+    pub document_type: &'static DocumentTypeId,
     /// Unique identifier of the document instance.
     pub document_instance_id: DocumentInstanceId,
     /// Optional list of relation attribute IDs to populate in the returned document.
@@ -51,7 +51,10 @@ pub struct FindByIdCommand {
 }
 
 impl FindByIdCommand {
-    pub fn new(document_type: DocumentTypeId, document_instance_id: DocumentInstanceId) -> Self {
+    pub fn new(
+        document_type: &'static DocumentTypeId,
+        document_instance_id: DocumentInstanceId,
+    ) -> Self {
         Self {
             document_type,
             document_instance_id,
@@ -82,7 +85,7 @@ pub enum RelationAction {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CreateDocumentCommand {
     /// Target document type to create an instance for.
-    pub document_type: DocumentTypeId,
+    pub document_type: &'static DocumentTypeId,
     /// Initial field values keyed by attribute ID.
     pub fields: HashMap<AttributeId, ContentValue>,
     /// Relational mutations keyed by attribute ID.
@@ -92,7 +95,10 @@ pub struct CreateDocumentCommand {
 }
 
 impl CreateDocumentCommand {
-    pub fn new(document_type: DocumentTypeId, fields: HashMap<AttributeId, ContentValue>) -> Self {
+    pub fn new(
+        document_type: &'static DocumentTypeId,
+        fields: HashMap<AttributeId, ContentValue>,
+    ) -> Self {
         Self {
             document_type,
             fields,
@@ -118,7 +124,7 @@ pub struct UpdateDocumentCommand {
     /// Identifier of the document instance to update.
     pub document_instance_id: DocumentInstanceId,
     /// Document type of the target document.
-    pub document_type: DocumentTypeId,
+    pub document_type: &'static DocumentTypeId,
     /// Updated field values keyed by attribute ID.
     pub fields: HashMap<AttributeId, ContentValue>,
     /// Relational mutations keyed by attribute ID.
@@ -130,7 +136,7 @@ pub struct UpdateDocumentCommand {
 impl UpdateDocumentCommand {
     pub fn new(
         document_instance_id: DocumentInstanceId,
-        document_type: DocumentTypeId,
+        document_type: &'static DocumentTypeId,
         fields: HashMap<AttributeId, ContentValue>,
     ) -> Self {
         Self {
@@ -159,11 +165,14 @@ pub struct DeleteDocumentCommand {
     /// Identifier of the document instance to delete.
     pub document_instance_id: DocumentInstanceId,
     /// Document type of the target document.
-    pub document_type: DocumentTypeId,
+    pub document_type: &'static DocumentTypeId,
 }
 
 impl DeleteDocumentCommand {
-    pub fn new(document_instance_id: DocumentInstanceId, document_type: DocumentTypeId) -> Self {
+    pub fn new(
+        document_instance_id: DocumentInstanceId,
+        document_type: &'static DocumentTypeId,
+    ) -> Self {
         Self {
             document_instance_id,
             document_type,
@@ -177,11 +186,14 @@ pub struct PublishDocumentCommand {
     /// Identifier of the document instance to publish.
     pub document_instance_id: DocumentInstanceId,
     /// Document type of the target document.
-    pub document_type: DocumentTypeId,
+    pub document_type: &'static DocumentTypeId,
 }
 
 impl PublishDocumentCommand {
-    pub fn new(document_instance_id: DocumentInstanceId, document_type: DocumentTypeId) -> Self {
+    pub fn new(
+        document_instance_id: DocumentInstanceId,
+        document_type: &'static DocumentTypeId,
+    ) -> Self {
         Self {
             document_instance_id,
             document_type,
@@ -195,11 +207,14 @@ pub struct UnpublishDocumentCommand {
     /// Identifier of the document instance to unpublish.
     pub document_instance_id: DocumentInstanceId,
     /// Document type of the target document.
-    pub document_type: DocumentTypeId,
+    pub document_type: &'static DocumentTypeId,
 }
 
 impl UnpublishDocumentCommand {
-    pub fn new(document_instance_id: DocumentInstanceId, document_type: DocumentTypeId) -> Self {
+    pub fn new(
+        document_instance_id: DocumentInstanceId,
+        document_type: &'static DocumentTypeId,
+    ) -> Self {
         Self {
             document_instance_id,
             document_type,
@@ -214,9 +229,10 @@ mod tests {
 
     #[test]
     fn test_find_documents_command_builder() {
-        let type_id = DocumentTypeId::try_new("article").unwrap();
+        let type_id: &'static DocumentTypeId =
+            Box::leak(Box::new(DocumentTypeId::try_new("article").unwrap()));
         let attr = AttributeId::try_new("author").unwrap();
-        let cmd = FindDocumentsCommand::new(type_id.clone(), Pagination::default())
+        let cmd = FindDocumentsCommand::new(type_id, Pagination::default())
             .with_populate(vec![attr.clone()]);
 
         assert_eq!(cmd.document_type, type_id);
@@ -227,11 +243,12 @@ mod tests {
 
     #[test]
     fn test_find_by_id_command_builder() {
-        let type_id = DocumentTypeId::try_new("article").unwrap();
+        let type_id: &'static DocumentTypeId =
+            Box::leak(Box::new(DocumentTypeId::try_new("article").unwrap()));
         let id = DocumentInstanceId::new(Uuid::now_v7());
         let attr = AttributeId::try_new("category").unwrap();
 
-        let cmd = FindByIdCommand::new(type_id.clone(), id).with_populate(vec![attr.clone()]);
+        let cmd = FindByIdCommand::new(type_id, id).with_populate(vec![attr.clone()]);
         assert_eq!(cmd.document_type, type_id);
         assert_eq!(cmd.document_instance_id, id);
         assert_eq!(cmd.populate, Some(vec![attr]));
@@ -239,22 +256,23 @@ mod tests {
 
     #[test]
     fn test_document_lifecycle_commands() {
-        let type_id = DocumentTypeId::try_new("article").unwrap();
+        let type_id: &'static DocumentTypeId =
+            Box::leak(Box::new(DocumentTypeId::try_new("article").unwrap()));
         let id = DocumentInstanceId::new(Uuid::now_v7());
 
-        let create = CreateDocumentCommand::new(type_id.clone(), HashMap::new());
+        let create = CreateDocumentCommand::new(type_id, HashMap::new());
         assert_eq!(create.document_type, type_id);
         assert!(create.fields.is_empty());
 
-        let update = UpdateDocumentCommand::new(id, type_id.clone(), HashMap::new());
+        let update = UpdateDocumentCommand::new(id, type_id, HashMap::new());
         assert_eq!(update.document_instance_id, id);
         assert_eq!(update.document_type, type_id);
 
-        let delete = DeleteDocumentCommand::new(id, type_id.clone());
+        let delete = DeleteDocumentCommand::new(id, type_id);
         assert_eq!(delete.document_instance_id, id);
         assert_eq!(delete.document_type, type_id);
 
-        let pub_cmd = PublishDocumentCommand::new(id, type_id.clone());
+        let pub_cmd = PublishDocumentCommand::new(id, type_id);
         assert_eq!(pub_cmd.document_instance_id, id);
 
         let unpub_cmd = UnpublishDocumentCommand::new(id, type_id);

@@ -17,4 +17,3 @@ pub use errors::{ApiError, ProblemDetails};
 pub use health::HealthChecker;
 pub use router::create_router;
 pub use state::{AppState, HttpState};
-

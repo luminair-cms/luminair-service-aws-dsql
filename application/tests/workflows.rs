@@ -14,7 +14,7 @@ use domain::schema::{
     AttributeId, DocumentKind, DocumentType, DocumentTypeId, DocumentTypeInfo, DocumentTypeOptions,
     FieldDefinition, FieldType, PrimitiveType, SchemaRegistry,
 };
-use domain::system::{LocaleId, SystemConfig, SystemConfigId};
+use domain::system::{LocaleId, SystemConfig, SystemConfigId, SystemContext};
 use indexmap::IndexSet;
 use uuid::Uuid;
 
@@ -45,8 +45,8 @@ struct TestAppHarness {
     pub assignment_repo: Arc<FakeUserRoleAssignmentRepository>,
     pub role_repo: Arc<FakeRoleRepository>,
     pub editor_role: Role,
-    pub article_type: DocumentType,
-    pub single_type: DocumentType,
+    pub article_type: &'static DocumentType,
+    pub single_type: &'static DocumentType,
     pub title_attr: AttributeId,
     pub body_attr: AttributeId,
     pub admin_context: CallerContext,
@@ -57,14 +57,12 @@ impl TestAppHarness {
         // 1. System Config (en, uk)
         let en = LocaleId::try_new("en").unwrap();
         let uk = LocaleId::try_new("uk").unwrap();
-        let system_config = Arc::new(
-            SystemConfig::new(
-                SystemConfigId::new(Uuid::now_v7()),
-                vec![en.clone(), uk],
-                en,
-            )
-            .unwrap(),
-        );
+        let system_config = SystemConfig::new(
+            SystemConfigId::new(Uuid::now_v7()),
+            vec![en.clone(), uk],
+            en,
+        )
+        .unwrap();
 
         // 2. Document Types
         let article_type_id = DocumentTypeId::try_new("article").unwrap();
@@ -113,7 +111,7 @@ impl TestAppHarness {
         });
 
         let single_type = DocumentType {
-            id: single_type_id,
+            id: single_type_id.clone(),
             kind: DocumentKind::SingleType,
             info: DocumentTypeInfo {
                 title: "Homepage".into(),
@@ -127,11 +125,14 @@ impl TestAppHarness {
             fields: single_fields,
         };
 
-        // 3. Schema Registry
-        let schema_registry = Arc::new(SchemaRegistry::new(
-            vec![article_type.clone(), single_type.clone()],
-            vec![],
-        ));
+        // 3. Schema Registry & Leaked System Context
+        let schema_registry = SchemaRegistry::new(vec![article_type, single_type], vec![]);
+        let context: &'static SystemContext = Box::leak(Box::new(SystemContext {
+            schema: schema_registry,
+            config: system_config,
+        }));
+        let leaked_article_type = context.schema.find_type(&article_type_id).unwrap();
+        let leaked_single_type = context.schema.find_type(&single_type_id).unwrap();
 
         // 4. Repositories
         let instance_repo = Arc::new(FakeDocumentInstanceRepository::new());
@@ -152,11 +153,7 @@ impl TestAppHarness {
         let role_repo = Arc::new(FakeRoleRepository::new().with_role(editor_role.clone()));
 
         // 5. Services
-        let documents_service = DocumentsServiceImpl::new(
-            instance_repo.clone(),
-            schema_registry,
-            system_config.clone(),
-        );
+        let documents_service = DocumentsServiceImpl::new(instance_repo.clone(), context);
 
         let access_requests_service = AccessRequestsServiceImpl::new(
             access_request_repo.clone(),
@@ -164,7 +161,7 @@ impl TestAppHarness {
             role_repo.clone(),
         );
 
-        let system_config_service = SystemConfigServiceImpl::new(system_config);
+        let system_config_service = SystemConfigServiceImpl::new(context);
         let admin_context = CallerContext::system();
 
         Self {
@@ -176,8 +173,8 @@ impl TestAppHarness {
             assignment_repo,
             role_repo,
             editor_role,
-            article_type,
-            single_type,
+            article_type: leaked_article_type,
+            single_type: leaked_single_type,
             title_attr,
             body_attr,
             admin_context,
@@ -205,7 +202,7 @@ async fn test_end_to_end_user_enrollment_and_content_authoring() {
         .documents_service
         .create(
             &alice_unauthorized_ctx,
-            CreateDocumentCommand::new(harness.article_type.id.clone(), fields.clone()),
+            CreateDocumentCommand::new(&harness.article_type.id, fields.clone()),
         )
         .await;
     assert!(matches!(
@@ -258,7 +255,7 @@ async fn test_end_to_end_user_enrollment_and_content_authoring() {
         .documents_service
         .create(
             &alice_ctx,
-            CreateDocumentCommand::new(harness.article_type.id.clone(), fields),
+            CreateDocumentCommand::new(&harness.article_type.id, fields),
         )
         .await
         .expect("Alice can create document");
@@ -277,7 +274,7 @@ async fn test_end_to_end_user_enrollment_and_content_authoring() {
         .documents_service
         .update(
             &alice_ctx,
-            UpdateDocumentCommand::new(article.id, harness.article_type.id.clone(), update_fields),
+            UpdateDocumentCommand::new(article.id, &harness.article_type.id, update_fields),
         )
         .await
         .expect("update succeeds");
@@ -288,7 +285,7 @@ async fn test_end_to_end_user_enrollment_and_content_authoring() {
         .documents_service
         .publish(
             &alice_ctx,
-            PublishDocumentCommand::new(article.id, harness.article_type.id.clone()),
+            PublishDocumentCommand::new(article.id, &harness.article_type.id),
         )
         .await
         .expect("publish succeeds");
@@ -303,7 +300,7 @@ async fn test_end_to_end_user_enrollment_and_content_authoring() {
         .documents_service
         .unpublish(
             &alice_ctx,
-            UnpublishDocumentCommand::new(article.id, harness.article_type.id.clone()),
+            UnpublishDocumentCommand::new(article.id, &harness.article_type.id),
         )
         .await
         .expect("unpublish succeeds");
@@ -319,7 +316,7 @@ async fn test_end_to_end_user_enrollment_and_content_authoring() {
         .documents_service
         .publish(
             &alice_ctx,
-            PublishDocumentCommand::new(article.id, harness.article_type.id.clone()),
+            PublishDocumentCommand::new(article.id, &harness.article_type.id),
         )
         .await
         .expect("republish succeeds");
@@ -335,7 +332,7 @@ async fn test_end_to_end_user_enrollment_and_content_authoring() {
         .documents_service
         .update(
             &bob_ctx,
-            UpdateDocumentCommand::new(article.id, harness.article_type.id, HashMap::new()),
+            UpdateDocumentCommand::new(article.id, &harness.article_type.id, HashMap::new()),
         )
         .await;
     assert!(matches!(
@@ -361,7 +358,7 @@ async fn test_single_type_singleton_enforcement_workflow() {
         .documents_service
         .create(
             &harness.admin_context,
-            CreateDocumentCommand::new(harness.single_type.id.clone(), fields.clone()),
+            CreateDocumentCommand::new(&harness.single_type.id, fields.clone()),
         )
         .await
         .expect("first creation succeeds");
@@ -372,7 +369,7 @@ async fn test_single_type_singleton_enforcement_workflow() {
         .documents_service
         .create(
             &harness.admin_context,
-            CreateDocumentCommand::new(harness.single_type.id.clone(), fields),
+            CreateDocumentCommand::new(&harness.single_type.id, fields),
         )
         .await;
 
@@ -393,7 +390,7 @@ async fn test_single_type_singleton_enforcement_workflow() {
         .documents_service
         .update(
             &harness.admin_context,
-            UpdateDocumentCommand::new(first.id, harness.single_type.id.clone(), update_fields),
+            UpdateDocumentCommand::new(first.id, &harness.single_type.id, update_fields),
         )
         .await
         .expect("update succeeds");
@@ -404,7 +401,7 @@ async fn test_single_type_singleton_enforcement_workflow() {
         .documents_service
         .delete(
             &harness.admin_context,
-            DeleteDocumentCommand::new(first.id, harness.single_type.id.clone()),
+            DeleteDocumentCommand::new(first.id, &harness.single_type.id),
         )
         .await
         .expect("delete succeeds");
@@ -415,7 +412,7 @@ async fn test_single_type_singleton_enforcement_workflow() {
         .create(
             &harness.admin_context,
             CreateDocumentCommand::new(
-                harness.single_type.id.clone(),
+                &harness.single_type.id,
                 HashMap::from([(
                     harness.title_attr.clone(),
                     ContentValue::Scalar(DomainValue::Primitive(PrimitiveValue::Text(
@@ -447,7 +444,7 @@ async fn test_two_phase_batch_populate_workflow() {
             .documents_service
             .create(
                 &harness.admin_context,
-                CreateDocumentCommand::new(harness.article_type.id.clone(), fields),
+                CreateDocumentCommand::new(&harness.article_type.id, fields),
             )
             .await
             .unwrap();
@@ -472,7 +469,7 @@ async fn test_two_phase_batch_populate_workflow() {
     // created_ids[2] has no tags
 
     // Find with populate: ["tags"]
-    let cmd = FindDocumentsCommand::new(harness.article_type.id.clone(), Pagination::default())
+    let cmd = FindDocumentsCommand::new(&harness.article_type.id, Pagination::default())
         .with_populate(vec![tag_attr.clone()]);
     let (items, count) = harness
         .documents_service
@@ -495,7 +492,7 @@ async fn test_two_phase_batch_populate_workflow() {
 
     // Find without populate -> populated_relations remains empty
     let unpopulated_cmd =
-        FindDocumentsCommand::new(harness.article_type.id.clone(), Pagination::default());
+        FindDocumentsCommand::new(&harness.article_type.id, Pagination::default());
     let (plain_items, _) = harness
         .documents_service
         .find(&harness.admin_context, unpopulated_cmd)
@@ -516,7 +513,7 @@ async fn test_schema_and_locale_validation_workflow() {
         .documents_service
         .create(
             &harness.admin_context,
-            CreateDocumentCommand::new(harness.article_type.id.clone(), HashMap::new()),
+            CreateDocumentCommand::new(&harness.article_type.id, HashMap::new()),
         )
         .await;
     // Returns Validation(Vec<String>) since service now collects all errors
@@ -544,7 +541,7 @@ async fn test_schema_and_locale_validation_workflow() {
         .documents_service
         .create(
             &harness.admin_context,
-            CreateDocumentCommand::new(harness.article_type.id.clone(), invalid_locale_fields),
+            CreateDocumentCommand::new(&harness.article_type.id, invalid_locale_fields),
         )
         .await;
     assert!(
@@ -572,7 +569,7 @@ async fn test_schema_and_locale_validation_workflow() {
         .documents_service
         .create(
             &harness.admin_context,
-            CreateDocumentCommand::new(harness.article_type.id, undeclared_attr_fields),
+            CreateDocumentCommand::new(&harness.article_type.id, undeclared_attr_fields),
         )
         .await;
     assert!(

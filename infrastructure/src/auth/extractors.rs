@@ -37,26 +37,45 @@ pub struct AuthAppState {
 
 impl AuthAppState {
     pub fn new(pool: PgPool, validator: Arc<dyn TokenValidator>) -> Self {
-        let role_repo = SqlxRoleRepository::new(pool.clone());
-        let assignment_repo = SqlxUserRoleAssignmentRepository::new(pool.clone());
-        let access_request_repo = SqlxAccessRequestRepository::new(pool.clone());
-        let shadow_user_repo = SqlxShadowUserRepository::new(pool.clone());
+        let role_repo = Arc::new(SqlxRoleRepository::new(pool.clone()));
+        let assignment_repo = Arc::new(SqlxUserRoleAssignmentRepository::new(pool.clone()));
+        let access_request_repo = Arc::new(SqlxAccessRequestRepository::new(pool.clone()));
+        let shadow_user_repo = Arc::new(SqlxShadowUserRepository::new(pool.clone()));
 
+        Self::from_parts(
+            pool,
+            validator,
+            assignment_repo,
+            role_repo,
+            access_request_repo,
+            shadow_user_repo,
+        )
+    }
+
+    /// Creates an `AuthAppState` sharing existing repository instances.
+    pub fn from_parts(
+        pool: PgPool,
+        validator: Arc<dyn TokenValidator>,
+        assignment_repo: Arc<SqlxUserRoleAssignmentRepository>,
+        role_repo: Arc<SqlxRoleRepository>,
+        access_request_repo: Arc<SqlxAccessRequestRepository>,
+        shadow_user_repo: Arc<SqlxShadowUserRepository>,
+    ) -> Self {
         let resolver = Arc::new(AuthContextResolver::new(
-            Arc::new(assignment_repo.clone()),
-            Arc::new(role_repo.clone()),
-            Arc::new(access_request_repo.clone()),
-            Arc::new(shadow_user_repo.clone()),
+            assignment_repo.clone(),
+            role_repo.clone(),
+            access_request_repo.clone(),
+            shadow_user_repo.clone(),
         ));
 
         Self {
             pool,
             validator,
             resolver,
-            role_repo,
-            assignment_repo,
-            access_request_repo,
-            shadow_user_repo,
+            role_repo: (*role_repo).clone(),
+            assignment_repo: (*assignment_repo).clone(),
+            access_request_repo: (*access_request_repo).clone(),
+            shadow_user_repo: (*shadow_user_repo).clone(),
         }
     }
 }

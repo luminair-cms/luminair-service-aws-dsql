@@ -15,7 +15,8 @@ pub async fn list_types(
     State(state): State<AppState>,
 ) -> Result<Response, ApiError> {
     let types: Vec<serde_json::Value> = state
-        .schema_registry
+        .context
+        .schema
         .all_types()
         .map(document_type_to_json)
         .collect();
@@ -33,7 +34,8 @@ pub async fn get_type(
         .map_err(|_| ApiError::NotFound(format!("document type '{id}' was not found")))?;
 
     let doc_type = state
-        .schema_registry
+        .context
+        .schema
         .find_type(&type_id)
         .ok_or_else(|| ApiError::NotFound(format!("document type '{id}' was not found")))?;
 

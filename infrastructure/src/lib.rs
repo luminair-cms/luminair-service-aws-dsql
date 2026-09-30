@@ -15,7 +15,10 @@ pub use auth::{
     AuthConfig, AuthContextResolver, AuthError, AuthUser, AuthenticatedClaims, Claims,
     JwksTokenValidator, MockTokenValidator, SecretTokenValidator, TokenValidator, run_bootstrap,
 };
-pub use composition::{AppContainer, BootstrapError, ConfigError, ServerConfig};
+pub use composition::{
+    AppContainer, AppContainerBuilder, BootstrapError, ConfigError, ContainerBuildError,
+    ServerConfig,
+};
 pub use migrations::{MIGRATOR, ROLE_ADMIN_ID, ROLE_EDITOR_ID, ROLE_VIEWER_ID, run_migrations};
 pub use repositories::{
     ShadowUser, SqlxAccessRequestRepository, SqlxDocumentInstanceRepository, SqlxRoleRepository,

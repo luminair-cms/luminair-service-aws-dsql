@@ -23,4 +23,3 @@ pub use extractors::{AuthAppState, AuthUser, AuthenticatedClaims};
 pub use resolver::AuthContextResolver;
 pub use shadow_users::{ShadowUser, SqlxShadowUserRepository};
 pub use validator::{JwksTokenValidator, MockTokenValidator, SecretTokenValidator, TokenValidator};
-

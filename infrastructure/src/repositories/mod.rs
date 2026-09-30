@@ -11,4 +11,3 @@ pub use document_instance_repository::SqlxDocumentInstanceRepository;
 pub use role_repository::SqlxRoleRepository;
 pub use shadow_user_repository::{ShadowUser, SqlxShadowUserRepository};
 pub use user_role_assignment_repository::SqlxUserRoleAssignmentRepository;
-

@@ -50,20 +50,20 @@ pub trait DocumentInstanceRepository: Send + Sync {
     /// `type_id` is required to resolve the per-type table name (ADR-007).
     fn find_by_id(
         &self,
-        type_id: DocumentTypeId,
+        type_id: &'static DocumentTypeId,
         id: DocumentInstanceId,
     ) -> impl Future<Output = Result<Option<DocumentInstance>, DomainError>> + Send;
 
     fn find_by_type(
         &self,
-        type_id: DocumentTypeId,
+        type_id: &'static DocumentTypeId,
         pagination: Pagination,
         filters: Vec<FieldFilter>,
     ) -> impl Future<Output = Result<Page<DocumentInstance>, DomainError>> + Send;
 
     fn count(
         &self,
-        type_id: DocumentTypeId,
+        type_id: &'static DocumentTypeId,
         filters: Vec<FieldFilter>,
     ) -> impl Future<Output = Result<u64, DomainError>> + Send;
 
@@ -71,7 +71,7 @@ pub trait DocumentInstanceRepository: Send + Sync {
     /// Returns a nested map: AttributeId -> (ParentInstanceId -> Vec<RelatedInstance>)
     fn fetch_relations(
         &self,
-        type_id: DocumentTypeId,
+        type_id: &'static DocumentTypeId,
         attributes: &[AttributeId],
         parent_ids: &[DocumentInstanceId],
     ) -> impl Future<Output = Result<RelationMap, DomainError>> + Send;
@@ -86,12 +86,12 @@ pub trait DocumentInstanceRepository: Send + Sync {
     /// `type_id` is required to resolve the per-type table name (ADR-007).
     fn delete(
         &self,
-        type_id: DocumentTypeId,
+        type_id: &'static DocumentTypeId,
         id: DocumentInstanceId,
     ) -> impl Future<Output = Result<(), DomainError>> + Send;
 
     fn exists_for_type(
         &self,
-        type_id: DocumentTypeId,
+        type_id: &'static DocumentTypeId,
     ) -> impl Future<Output = Result<bool, DomainError>> + Send;
 }

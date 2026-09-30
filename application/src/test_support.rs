@@ -49,7 +49,7 @@ impl FakeDocumentInstanceRepository {
 impl DocumentInstanceRepository for FakeDocumentInstanceRepository {
     async fn find_by_id(
         &self,
-        _type_id: DocumentTypeId,
+        _type_id: &'static DocumentTypeId,
         id: DocumentInstanceId,
     ) -> Result<Option<DocumentInstance>, DomainError> {
         let store = self
@@ -61,7 +61,7 @@ impl DocumentInstanceRepository for FakeDocumentInstanceRepository {
 
     async fn find_by_type(
         &self,
-        type_id: DocumentTypeId,
+        type_id: &'static DocumentTypeId,
         pagination: Pagination,
         _filters: Vec<FieldFilter>,
     ) -> Result<Page<DocumentInstance>, DomainError> {
@@ -72,7 +72,7 @@ impl DocumentInstanceRepository for FakeDocumentInstanceRepository {
 
         let filtered: Vec<DocumentInstance> = store
             .values()
-            .filter(|inst| inst.document_type_id == type_id)
+            .filter(|inst| inst.document_type_id == *type_id)
             .cloned()
             .collect();
 
@@ -94,7 +94,7 @@ impl DocumentInstanceRepository for FakeDocumentInstanceRepository {
 
     async fn count(
         &self,
-        type_id: DocumentTypeId,
+        type_id: &'static DocumentTypeId,
         _filters: Vec<FieldFilter>,
     ) -> Result<u64, DomainError> {
         let store = self
@@ -103,14 +103,14 @@ impl DocumentInstanceRepository for FakeDocumentInstanceRepository {
             .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
         let count = store
             .values()
-            .filter(|inst| inst.document_type_id == type_id)
+            .filter(|inst| inst.document_type_id == *type_id)
             .count() as u64;
         Ok(count)
     }
 
     async fn fetch_relations(
         &self,
-        _type_id: DocumentTypeId,
+        _type_id: &'static DocumentTypeId,
         attributes: &[AttributeId],
         parent_ids: &[DocumentInstanceId],
     ) -> Result<RelationMap, DomainError> {
@@ -164,7 +164,7 @@ impl DocumentInstanceRepository for FakeDocumentInstanceRepository {
 
     async fn delete(
         &self,
-        _type_id: DocumentTypeId,
+        _type_id: &'static DocumentTypeId,
         id: DocumentInstanceId,
     ) -> Result<(), DomainError> {
         let mut store = self
@@ -184,12 +184,12 @@ impl DocumentInstanceRepository for FakeDocumentInstanceRepository {
         Ok(())
     }
 
-    async fn exists_for_type(&self, type_id: DocumentTypeId) -> Result<bool, DomainError> {
+    async fn exists_for_type(&self, type_id: &'static DocumentTypeId) -> Result<bool, DomainError> {
         let store = self
             .instances
             .read()
             .map_err(|_| DomainError::Unauthorized("failed to acquire read lock".into()))?;
-        Ok(store.values().any(|inst| inst.document_type_id == type_id))
+        Ok(store.values().any(|inst| inst.document_type_id == *type_id))
     }
 }
 

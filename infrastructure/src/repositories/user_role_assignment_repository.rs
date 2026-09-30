@@ -147,7 +147,12 @@ impl UserRoleAssignmentRepository for SqlxUserRoleAssignmentRepository {
                     .push_bind(assignment.user_id.as_ref().to_string())
                     .push_bind(*assignment.role_id.as_ref())
                     .push_bind(assignment.granted_at)
-                    .push_bind(assignment.granted_by.as_ref().map(|u| u.as_ref().to_string()));
+                    .push_bind(
+                        assignment
+                            .granted_by
+                            .as_ref()
+                            .map(|u| u.as_ref().to_string()),
+                    );
             });
             qb.push(
                 " ON CONFLICT (user_id, role_id) DO UPDATE SET \

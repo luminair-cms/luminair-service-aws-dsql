@@ -6,13 +6,12 @@ use application::services::access_requests::AccessRequestsServiceImpl;
 use application::services::documents::DocumentsServiceImpl;
 use application::services::system_config::SystemConfigServiceImpl;
 use axum::extract::FromRef;
-use domain::schema::SchemaRegistry;
-use domain::system::SystemConfig;
+use domain::system::SystemContext;
 use sqlx::PgPool;
 
 use super::health::HealthChecker;
 use crate::auth::AuthAppState;
-use crate::composition::AppContainer;
+use crate::composition::{AppContainer, ContainerBuildError};
 use crate::repositories::{
     SqlxAccessRequestRepository, SqlxDocumentInstanceRepository, SqlxRoleRepository,
     SqlxUserRoleAssignmentRepository,
@@ -25,8 +24,7 @@ use crate::repositories::{
 #[derive(Clone)]
 pub struct HttpState {
     pub auth: AuthAppState,
-    pub schema_registry: Arc<SchemaRegistry>,
-    pub system_config: Arc<SystemConfig>,
+    pub context: &'static SystemContext,
     pub documents_service: Arc<DocumentsServiceImpl<SqlxDocumentInstanceRepository>>,
     pub access_requests_service: Arc<
         AccessRequestsServiceImpl<
@@ -43,19 +41,27 @@ pub struct HttpState {
 pub type AppState = HttpState;
 
 impl HttpState {
-    /// Creates a new HttpState using the composition root container.
+    /// Creates a new HttpState with an existing AuthAppState using the composition container builder.
     pub fn new(
         pool: PgPool,
         auth: AuthAppState,
-        schema_registry: Arc<SchemaRegistry>,
-        system_config: Arc<SystemConfig>,
-    ) -> Self {
-        let container = AppContainer::with_auth_state(
-            pool,
-            auth,
-            schema_registry,
-            system_config,
-        );
+        context: &'static SystemContext,
+    ) -> Result<Self, ContainerBuildError> {
+        let container = AppContainer::builder(pool, context)
+            .with_auth_state(auth)
+            .build()?;
+        Ok(container.to_http_state())
+    }
+}
+
+impl From<&AppContainer> for HttpState {
+    fn from(container: &AppContainer) -> Self {
+        container.to_http_state()
+    }
+}
+
+impl From<AppContainer> for HttpState {
+    fn from(container: AppContainer) -> Self {
         container.to_http_state()
     }
 }

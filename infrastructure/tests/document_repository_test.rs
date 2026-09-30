@@ -11,7 +11,6 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::sync::Arc;
 
 use chrono::Utc;
 use domain::auth::UserId;
@@ -21,7 +20,7 @@ use domain::content::{
     DocumentInstanceRepository, DomainValue, FieldFilter, Pagination, PrimitiveValue,
     PublicationState, ResolvedRelation,
 };
-use domain::schema::{AttributeId, DocumentTypeId};
+use domain::schema::{AttributeId, DocumentTypeId, SchemaRegistry};
 use infrastructure::migrations::run_migrations;
 use infrastructure::repositories::SqlxDocumentInstanceRepository;
 use infrastructure::schema_loader::{SafetyPolicy, load_schema_registry, sync_schemas};
@@ -162,11 +161,21 @@ async fn test_document_instance_repository_lifecycle() {
         .expect("sync schemas failed");
 
     let (registry, _config) = load_schema_registry(&temp_dir).expect("load registry failed");
-    let repo = SqlxDocumentInstanceRepository::new(pool.clone(), Arc::new(registry));
+    let leaked_registry: &'static SchemaRegistry = Box::leak(Box::new(registry));
+    let repo = SqlxDocumentInstanceRepository::new(pool.clone(), leaked_registry);
 
-    let author_type = DocumentTypeId::try_new("author").unwrap();
-    let article_type = DocumentTypeId::try_new("article").unwrap();
-    let setting_type = DocumentTypeId::try_new("site-setting").unwrap();
+    let author_type: &'static DocumentTypeId = &leaked_registry
+        .find_type(&DocumentTypeId::try_new("author").unwrap())
+        .unwrap()
+        .id;
+    let article_type: &'static DocumentTypeId = &leaked_registry
+        .find_type(&DocumentTypeId::try_new("article").unwrap())
+        .unwrap()
+        .id;
+    let setting_type: &'static DocumentTypeId = &leaked_registry
+        .find_type(&DocumentTypeId::try_new("site-setting").unwrap())
+        .unwrap()
+        .id;
 
     // 1. Create and save an Author instance
     let author_id = DocumentInstanceId::new(Uuid::now_v7());
@@ -187,7 +196,7 @@ async fn test_document_instance_repository_lifecycle() {
     let author = DocumentInstance {
         id: author_id,
         db_row_id: Some(author_id),
-        document_type_id: author_type.clone(),
+        document_type_id: (*author_type).clone(),
         content: DocumentContent {
             fields: author_fields,
             publication_state: PublicationState::Draft {
@@ -209,7 +218,7 @@ async fn test_document_instance_repository_lifecycle() {
 
     // Verify Author saved
     let fetched_author = repo
-        .find_by_id(author_type.clone(), author_id)
+        .find_by_id(author_type, author_id)
         .await
         .expect("fetch author query failed")
         .expect("author should exist");
@@ -257,7 +266,7 @@ async fn test_document_instance_repository_lifecycle() {
     let article = DocumentInstance {
         id: article_id,
         db_row_id: Some(article_id),
-        document_type_id: article_type.clone(),
+        document_type_id: (*article_type).clone(),
         content: DocumentContent {
             fields: article_fields,
             publication_state: PublicationState::Draft {
@@ -279,7 +288,7 @@ async fn test_document_instance_repository_lifecycle() {
 
     // 3. Verify Article find_by_id & relations
     let fetched_article = repo
-        .find_by_id(article_type.clone(), article_id)
+        .find_by_id(article_type, article_id)
         .await
         .expect("fetch article query failed")
         .expect("article should exist");
@@ -301,12 +310,12 @@ async fn test_document_instance_repository_lifecycle() {
 
     // 4. Test count & exists_for_type
     let count = repo
-        .count(article_type.clone(), vec![])
+        .count(article_type, vec![])
         .await
         .expect("count failed");
     assert_eq!(count, 1);
     let exists = repo
-        .exists_for_type(article_type.clone())
+        .exists_for_type(article_type)
         .await
         .expect("exists failed");
     assert!(exists);
@@ -317,11 +326,7 @@ async fn test_document_instance_repository_lifecycle() {
         value: DomainValue::Primitive(PrimitiveValue::Uid("first-post".to_string())),
     };
     let page = repo
-        .find_by_type(
-            article_type.clone(),
-            Pagination::default(),
-            vec![slug_filter],
-        )
+        .find_by_type(article_type, Pagination::default(), vec![slug_filter])
         .await
         .expect("find_by_type failed");
     assert_eq!(page.total, 1);
@@ -332,7 +337,7 @@ async fn test_document_instance_repository_lifecycle() {
     // Owner side: article -> author
     let rel_map = repo
         .fetch_relations(
-            article_type.clone(),
+            article_type,
             std::slice::from_ref(&author_attr),
             &[article_id],
         )
@@ -346,7 +351,7 @@ async fn test_document_instance_repository_lifecycle() {
     let articles_attr = AttributeId::try_new("articles").unwrap();
     let inv_rel_map = repo
         .fetch_relations(
-            author_type.clone(),
+            author_type,
             std::slice::from_ref(&articles_attr),
             &[author_id],
         )
@@ -373,7 +378,7 @@ async fn test_document_instance_repository_lifecycle() {
         .expect("save published article failed");
 
     let fetched_pub = repo
-        .find_by_id(article_type.clone(), article_id)
+        .find_by_id(article_type, article_id)
         .await
         .expect("fetch published article failed")
         .expect("article should exist");
@@ -401,7 +406,7 @@ async fn test_document_instance_repository_lifecycle() {
     let setting = DocumentInstance {
         id: setting_id,
         db_row_id: Some(setting_id),
-        document_type_id: setting_type.clone(),
+        document_type_id: (*setting_type).clone(),
         content: DocumentContent {
             fields: setting_fields,
             publication_state: PublicationState::Draft {
@@ -421,7 +426,7 @@ async fn test_document_instance_repository_lifecycle() {
     repo.save(&setting).await.expect("save setting failed");
 
     let count_settings = repo
-        .count(setting_type.clone(), vec![])
+        .count(setting_type, vec![])
         .await
         .expect("count setting failed");
     assert_eq!(count_settings, 1);
@@ -438,7 +443,7 @@ async fn test_document_instance_repository_lifecycle() {
     let setting_2 = DocumentInstance {
         id: setting_id_2,
         db_row_id: Some(setting_id_2),
-        document_type_id: setting_type.clone(),
+        document_type_id: (*setting_type).clone(),
         content: DocumentContent {
             fields: setting_fields_2,
             publication_state: PublicationState::Draft {
@@ -458,21 +463,21 @@ async fn test_document_instance_repository_lifecycle() {
     repo.save(&setting_2).await.expect("update setting failed");
 
     let count_settings_after = repo
-        .count(setting_type.clone(), vec![])
+        .count(setting_type, vec![])
         .await
         .expect("count setting failed");
     assert_eq!(count_settings_after, 1);
 
     // 9. Test Delete
-    repo.delete(article_type.clone(), article_id)
+    repo.delete(article_type, article_id)
         .await
         .expect("delete article failed");
     let after_delete = repo
-        .find_by_id(article_type.clone(), article_id)
+        .find_by_id(article_type, article_id)
         .await
         .expect("fetch after delete failed");
     assert!(after_delete.is_none());
-    assert_eq!(repo.count(article_type.clone(), vec![]).await.unwrap(), 0);
+    assert_eq!(repo.count(article_type, vec![]).await.unwrap(), 0);
 
     // Clean up
     let _ = fs::remove_dir_all(&temp_dir);

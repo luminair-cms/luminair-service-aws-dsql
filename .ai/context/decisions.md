@@ -384,3 +384,35 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
   - 100% of workspace tests pass (172 tests: 96 domain, 35 application, 41 infrastructure).
   - Zero warnings on `cargo clippy --workspace -- -D warnings`.
 
+## 2026-09-30 — Composition Root Refactoring (`AppContainerBuilder` & Repository Sharing)
+
+- **Introduced `AppContainerBuilder`**:
+  - Replaced the monolithic `with_auth_state` constructor on `AppContainer` with a dedicated, fluent `AppContainerBuilder`.
+  - Removed `AppContainer::with_auth_state` from `AppContainer` to eliminate inverted construction hierarchy.
+  - Placed `.with_auth_state(auth)` on `AppContainerBuilder` where it serves by design for configurations/tests requiring a pre-wired `AuthAppState`.
+- **Eliminated Repository Duplication Across Auth & Container Subsystems**:
+  - Added `AuthAppState::from_parts` in `infrastructure::src::auth::extractors`, enabling `AppContainer` to instantiate repositories once and share identical `Arc` references across `AuthContextResolver`, `AccessRequestsServiceImpl`, and the container.
+  - When `.with_auth_state(auth)` is supplied to the builder, the builder reuses the repositories inside `auth` rather than creating redundant instances.
+- **Fluent & Safe Container Assembly**:
+  - `AppContainer::new` acts as the canonical, infallible entry point delegating to `AppContainerBuilder`.
+  - `AppContainerBuilder::build()` returns `Result<AppContainer, ContainerBuildError>` enforcing that authentication (validator or auth state) is explicitly configured.
+  - Implemented `From<&AppContainer>` and `From<AppContainer>` for `HttpState`.
+
+## 2026-09-30 — Unified `SystemContext`, Zero-Allocation `&'static` Lifetime & String Leak Architecture
+
+- **Unified `SystemContext` in `domain::system`**:
+  - Combined `SchemaRegistry` and `SystemConfig` into `SystemContext { pub schema: SchemaRegistry, pub config: SystemConfig }`.
+  - Solved conceptual misnomer (it contains system-wide configuration such as locales, not merely schema).
+- **`Box::leak` at Bootstrap (`&'static SystemContext`)**:
+  - In a cloud microservice deployment, system schemas and locale configuration are loaded once at startup and remain immutable during the process lifecycle.
+  - By leaking the `SystemContext` once at bootstrap via `Box::leak(Box::new(...))`, the process obtains a `&'static SystemContext`.
+  - Eliminates runtime synchronisation overhead (`Arc`, `RwLock`, or dynamic atomic reference counting).
+  - Parallel test runners (`cargo test`) remain completely isolated by having test fixtures create and leak their own in-memory context pointers without shared global state.
+- **Zero-Allocation `&'static DocumentTypeId` Port & Command Signatures**:
+  - Changed `DocumentInstanceRepository` port methods (`find_by_type`, `count_by_type`, etc.) from owned `DocumentTypeId` to `type_id: &'static DocumentTypeId`.
+  - Changed application document commands (`FindDocumentsCommand`, `CreateDocumentCommand`, `UpdateDocumentCommand`, `DeleteDocumentCommand`, `PublishDocumentCommand`, `UnpublishDocumentCommand`) to store `pub document_type: &'static DocumentTypeId`.
+  - In HTTP route handlers, `state.context.schema.find_type(&type_id)` or `find_type_by_name(&slug)` yields `&'static DocumentType`. The reference `&doc_type.id` is `&'static DocumentTypeId`, which is a simple pointer copy (`Copy`).
+  - Completely eliminated heap string allocations and `.clone()` calls across the entire HTTP $\rightarrow$ Service $\rightarrow$ Repository execution path for every document request.
+
+
+

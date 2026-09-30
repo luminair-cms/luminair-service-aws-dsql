@@ -92,15 +92,14 @@ pub async fn handle_root_get(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Response, ApiError> {
     // 1. Check if slug matches Collection pluralName
-    if let Some(doc_type) = state.schema_registry.find_type_by_name(&slug)
+    if let Some(doc_type) = state.context.schema.find_type_by_name(&slug)
         && doc_type.kind == DocumentKind::Collection
     {
         let pagination = parse_pagination(&params);
         let populate = parse_populate(&params);
         let filters = parse_filters(&params, doc_type)?;
 
-        let mut cmd =
-            FindDocumentsCommand::new(doc_type.id.clone(), pagination).with_filters(filters);
+        let mut cmd = FindDocumentsCommand::new(&doc_type.id, pagination).with_filters(filters);
         if let Some(pop) = populate {
             cmd = cmd.with_populate(pop);
         }
@@ -123,12 +122,12 @@ pub async fn handle_root_get(
 
     // 2. Check if slug matches SingleType singularName
     if let Ok(type_id) = DocumentTypeId::try_new(&slug)
-        && let Some(doc_type) = state.schema_registry.find_type(&type_id)
+        && let Some(doc_type) = state.context.schema.find_type(&type_id)
         && doc_type.kind == DocumentKind::SingleType
     {
         let populate = parse_populate(&params);
         let mut cmd = FindDocumentsCommand::new(
-            type_id.clone(),
+            &doc_type.id,
             Pagination {
                 page: 1,
                 page_size: 1,
@@ -164,13 +163,12 @@ pub async fn handle_root_post(
     Query(params): Query<HashMap<String, String>>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> Result<Response, ApiError> {
-    if let Some(doc_type) = state.schema_registry.find_type_by_name(&slug)
+    if let Some(doc_type) = state.context.schema.find_type_by_name(&slug)
         && doc_type.kind == DocumentKind::Collection
     {
-        let (fields, relations) = parse_payload_from_json(&body, doc_type, &state.schema_registry)?;
+        let (fields, relations) = parse_payload_from_json(&body, doc_type, &state.context.schema)?;
         let populate = parse_populate(&params);
-        let mut cmd =
-            CreateDocumentCommand::new(doc_type.id.clone(), fields).with_relations(relations);
+        let mut cmd = CreateDocumentCommand::new(&doc_type.id, fields).with_relations(relations);
         if let Some(pop) = populate {
             cmd = cmd.with_populate(pop);
         }
@@ -184,7 +182,7 @@ pub async fn handle_root_post(
     }
 
     if let Ok(type_id) = DocumentTypeId::try_new(&slug)
-        && let Some(doc_type) = state.schema_registry.find_type(&type_id)
+        && let Some(doc_type) = state.context.schema.find_type(&type_id)
         && doc_type.kind == DocumentKind::SingleType
     {
         return Err(ApiError::BadRequest(format!(
@@ -207,10 +205,10 @@ pub async fn handle_root_put(
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> Result<Response, ApiError> {
     if let Ok(type_id) = DocumentTypeId::try_new(&slug)
-        && let Some(doc_type) = state.schema_registry.find_type(&type_id)
+        && let Some(doc_type) = state.context.schema.find_type(&type_id)
         && doc_type.kind == DocumentKind::SingleType
     {
-        let (fields, relations) = parse_payload_from_json(&body, doc_type, &state.schema_registry)?;
+        let (fields, relations) = parse_payload_from_json(&body, doc_type, &state.context.schema)?;
         let populate = parse_populate(&params);
 
         // Check if singleton instance already exists
@@ -219,7 +217,7 @@ pub async fn handle_root_put(
             .find(
                 &auth.caller,
                 FindDocumentsCommand::new(
-                    type_id.clone(),
+                    &doc_type.id,
                     Pagination {
                         page: 1,
                         page_size: 1,
@@ -230,7 +228,7 @@ pub async fn handle_root_put(
 
         if let Some(inst) = existing.into_iter().next() {
             let mut update_cmd =
-                UpdateDocumentCommand::new(inst.id, type_id, fields).with_relations(relations);
+                UpdateDocumentCommand::new(inst.id, &doc_type.id, fields).with_relations(relations);
             if let Some(pop) = populate {
                 update_cmd = update_cmd.with_populate(pop);
             }
@@ -244,7 +242,7 @@ pub async fn handle_root_put(
             );
         } else {
             let mut create_cmd =
-                CreateDocumentCommand::new(type_id, fields).with_relations(relations);
+                CreateDocumentCommand::new(&doc_type.id, fields).with_relations(relations);
             if let Some(pop) = populate {
                 create_cmd = create_cmd.with_populate(pop);
             }
@@ -260,7 +258,7 @@ pub async fn handle_root_put(
         }
     }
 
-    if let Some(_doc_type) = state.schema_registry.find_type_by_name(&slug) {
+    if let Some(_doc_type) = state.context.schema.find_type_by_name(&slug) {
         return Err(ApiError::BadRequest(format!(
             "cannot PUT collection root '/api/{slug}'; specify entry id '/api/{slug}/{{id}}'"
         )));
@@ -279,15 +277,15 @@ pub async fn handle_root_delete(
     Path(slug): Path<String>,
 ) -> Result<Response, ApiError> {
     if let Ok(type_id) = DocumentTypeId::try_new(&slug)
-        && let Some(_doc_type) = state.schema_registry.find_type(&type_id)
-        && _doc_type.kind == DocumentKind::SingleType
+        && let Some(doc_type) = state.context.schema.find_type(&type_id)
+        && doc_type.kind == DocumentKind::SingleType
     {
         let (existing, _) = state
             .documents_service
             .find(
                 &auth.caller,
                 FindDocumentsCommand::new(
-                    type_id.clone(),
+                    &doc_type.id,
                     Pagination {
                         page: 1,
                         page_size: 1,
@@ -299,13 +297,16 @@ pub async fn handle_root_delete(
         if let Some(inst) = existing.into_iter().next() {
             state
                 .documents_service
-                .delete(&auth.caller, DeleteDocumentCommand::new(inst.id, type_id))
+                .delete(
+                    &auth.caller,
+                    DeleteDocumentCommand::new(inst.id, &doc_type.id),
+                )
                 .await?;
         }
         return Ok(StatusCode::NO_CONTENT.into_response());
     }
 
-    if let Some(_doc_type) = state.schema_registry.find_type_by_name(&slug) {
+    if let Some(_doc_type) = state.context.schema.find_type_by_name(&slug) {
         return Err(ApiError::BadRequest(format!(
             "cannot DELETE collection root '/api/{slug}'; specify entry id '/api/{slug}/{{id}}'"
         )));
@@ -329,7 +330,8 @@ pub async fn handle_singleton_publish(
     let type_id = DocumentTypeId::try_new(&slug)
         .map_err(|_| ApiError::NotFound(format!("document type '{slug}' was not found")))?;
     let doc_type = state
-        .schema_registry
+        .context
+        .schema
         .find_type(&type_id)
         .ok_or_else(|| ApiError::NotFound(format!("document type '{slug}' was not found")))?;
 
@@ -344,7 +346,7 @@ pub async fn handle_singleton_publish(
         .find(
             &auth.caller,
             FindDocumentsCommand::new(
-                type_id.clone(),
+                &doc_type.id,
                 Pagination {
                     page: 1,
                     page_size: 1,
@@ -359,7 +361,10 @@ pub async fn handle_singleton_publish(
 
     let updated = state
         .documents_service
-        .publish(&auth.caller, PublishDocumentCommand::new(inst.id, type_id))
+        .publish(
+            &auth.caller,
+            PublishDocumentCommand::new(inst.id, &doc_type.id),
+        )
         .await?;
 
     Ok(axum::Json(SingleResponse::new(document_to_json(&updated, doc_type))).into_response())
@@ -374,7 +379,8 @@ pub async fn handle_singleton_unpublish(
     let type_id = DocumentTypeId::try_new(&slug)
         .map_err(|_| ApiError::NotFound(format!("document type '{slug}' was not found")))?;
     let doc_type = state
-        .schema_registry
+        .context
+        .schema
         .find_type(&type_id)
         .ok_or_else(|| ApiError::NotFound(format!("document type '{slug}' was not found")))?;
 
@@ -389,7 +395,7 @@ pub async fn handle_singleton_unpublish(
         .find(
             &auth.caller,
             FindDocumentsCommand::new(
-                type_id.clone(),
+                &doc_type.id,
                 Pagination {
                     page: 1,
                     page_size: 1,
@@ -406,7 +412,7 @@ pub async fn handle_singleton_unpublish(
         .documents_service
         .unpublish(
             &auth.caller,
-            UnpublishDocumentCommand::new(inst.id, type_id),
+            UnpublishDocumentCommand::new(inst.id, &doc_type.id),
         )
         .await?;
 
@@ -425,7 +431,8 @@ pub async fn handle_collection_get(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Response, ApiError> {
     let doc_type = state
-        .schema_registry
+        .context
+        .schema
         .find_type_by_name(&slug)
         .ok_or_else(|| ApiError::NotFound(format!("collection '{slug}' was not found")))?;
 
@@ -434,7 +441,7 @@ pub async fn handle_collection_get(
     let inst_id = DocumentInstanceId::new(uuid);
 
     let populate = parse_populate(&params);
-    let mut cmd = FindByIdCommand::new(doc_type.id.clone(), inst_id);
+    let mut cmd = FindByIdCommand::new(&doc_type.id, inst_id);
     if let Some(pop) = populate {
         cmd = cmd.with_populate(pop);
     }
@@ -459,7 +466,8 @@ pub async fn handle_collection_put(
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> Result<Response, ApiError> {
     let doc_type = state
-        .schema_registry
+        .context
+        .schema
         .find_type_by_name(&slug)
         .ok_or_else(|| ApiError::NotFound(format!("collection '{slug}' was not found")))?;
 
@@ -467,10 +475,10 @@ pub async fn handle_collection_put(
         .map_err(|e| ApiError::BadRequest(format!("invalid instance id: {e}")))?;
     let inst_id = DocumentInstanceId::new(uuid);
 
-    let (fields, relations) = parse_payload_from_json(&body, doc_type, &state.schema_registry)?;
+    let (fields, relations) = parse_payload_from_json(&body, doc_type, &state.context.schema)?;
     let populate = parse_populate(&params);
     let mut cmd =
-        UpdateDocumentCommand::new(inst_id, doc_type.id.clone(), fields).with_relations(relations);
+        UpdateDocumentCommand::new(inst_id, &doc_type.id, fields).with_relations(relations);
     if let Some(pop) = populate {
         cmd = cmd.with_populate(pop);
     }
@@ -487,7 +495,8 @@ pub async fn handle_collection_delete(
     Path((slug, id)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
     let doc_type = state
-        .schema_registry
+        .context
+        .schema
         .find_type_by_name(&slug)
         .ok_or_else(|| ApiError::NotFound(format!("collection '{slug}' was not found")))?;
 
@@ -495,7 +504,7 @@ pub async fn handle_collection_delete(
         .map_err(|e| ApiError::BadRequest(format!("invalid instance id: {e}")))?;
     let inst_id = DocumentInstanceId::new(uuid);
 
-    let cmd = DeleteDocumentCommand::new(inst_id, doc_type.id.clone());
+    let cmd = DeleteDocumentCommand::new(inst_id, &doc_type.id);
     state.documents_service.delete(&auth.caller, cmd).await?;
 
     Ok(StatusCode::NO_CONTENT.into_response())
@@ -508,7 +517,8 @@ pub async fn handle_collection_publish(
     Path((slug, id)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
     let doc_type = state
-        .schema_registry
+        .context
+        .schema
         .find_type_by_name(&slug)
         .ok_or_else(|| ApiError::NotFound(format!("collection '{slug}' was not found")))?;
 
@@ -516,7 +526,7 @@ pub async fn handle_collection_publish(
         .map_err(|e| ApiError::BadRequest(format!("invalid instance id: {e}")))?;
     let inst_id = DocumentInstanceId::new(uuid);
 
-    let cmd = PublishDocumentCommand::new(inst_id, doc_type.id.clone());
+    let cmd = PublishDocumentCommand::new(inst_id, &doc_type.id);
     let updated = state.documents_service.publish(&auth.caller, cmd).await?;
 
     Ok(axum::Json(SingleResponse::new(document_to_json(&updated, doc_type))).into_response())
@@ -529,7 +539,8 @@ pub async fn handle_collection_unpublish(
     Path((slug, id)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
     let doc_type = state
-        .schema_registry
+        .context
+        .schema
         .find_type_by_name(&slug)
         .ok_or_else(|| ApiError::NotFound(format!("collection '{slug}' was not found")))?;
 
@@ -537,7 +548,7 @@ pub async fn handle_collection_unpublish(
         .map_err(|e| ApiError::BadRequest(format!("invalid instance id: {e}")))?;
     let inst_id = DocumentInstanceId::new(uuid);
 
-    let cmd = UnpublishDocumentCommand::new(inst_id, doc_type.id.clone());
+    let cmd = UnpublishDocumentCommand::new(inst_id, &doc_type.id);
     let updated = state.documents_service.unpublish(&auth.caller, cmd).await?;
 
     Ok(axum::Json(SingleResponse::new(document_to_json(&updated, doc_type))).into_response())

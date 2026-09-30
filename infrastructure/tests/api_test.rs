@@ -6,10 +6,11 @@ use std::sync::Arc;
 
 use axum::http::StatusCode;
 use axum_test::TestServer;
+use domain::system::SystemContext;
 use infrastructure::api::create_router;
 use infrastructure::api::dto::SingleResponse;
-use infrastructure::api::state::AppState;
-use infrastructure::auth::{AuthAppState, AuthConfig, Claims, SecretTokenValidator, run_bootstrap};
+use infrastructure::auth::{AuthConfig, Claims, SecretTokenValidator, run_bootstrap};
+use infrastructure::composition::AppContainer;
 use infrastructure::migrations::{ROLE_EDITOR_ID, run_migrations};
 use infrastructure::repositories::{SqlxAccessRequestRepository, SqlxUserRoleAssignmentRepository};
 use infrastructure::schema_loader::{SafetyPolicy, load_schema_registry, sync_schemas};
@@ -176,8 +177,10 @@ async fn setup_test_server(pool: &PgPool) -> TestContext {
 
     // Sync schema to DB
     let (schema_registry, system_config) = load_schema_registry(&temp_dir).unwrap();
-    let schema_registry = Arc::new(schema_registry);
-    let system_config = Arc::new(system_config);
+    let context: &'static SystemContext = Box::leak(Box::new(SystemContext {
+        schema: schema_registry,
+        config: system_config,
+    }));
     sync_schemas(pool, &temp_dir, SafetyPolicy::AllowDestructive)
         .await
         .unwrap();
@@ -210,13 +213,8 @@ async fn setup_test_server(pool: &PgPool) -> TestContext {
     };
     let admin_token = validator.generate_token(&admin_claims).unwrap();
 
-    let auth_state = AuthAppState::new(pool.clone(), validator.clone());
-    let app_state = AppState::new(
-        pool.clone(),
-        auth_state,
-        schema_registry.clone(),
-        system_config.clone(),
-    );
+    let container = AppContainer::new(pool.clone(), validator.clone(), context);
+    let app_state = container.to_http_state();
 
     let router = create_router(app_state);
     let server = TestServer::new(router);
