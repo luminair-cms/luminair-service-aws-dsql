@@ -32,84 +32,75 @@ pub enum BootstrapMode {
     DryRun,
 }
 
+impl std::str::FromStr for BootstrapMode {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let trimmed = s.trim();
+        let token = trimmed
+            .strip_prefix("--")
+            .or_else(|| trimmed.strip_prefix('-'))
+            .unwrap_or(trimmed);
+
+        if token.is_empty() || token.len() > 16 {
+            return Err(());
+        }
+
+        let mut buf = [0u8; 16];
+        for (i, b) in token.bytes().enumerate() {
+            buf[i] = if b == b'_' {
+                b'-'
+            } else {
+                b.to_ascii_lowercase()
+            };
+        }
+        let normalized = std::str::from_utf8(&buf[..token.len()]).map_err(|_| ())?;
+
+        match normalized {
+            "migrate" | "migration" | "m" => Ok(Self::Migrate),
+            "dry-run" | "dryrun" | "check" => Ok(Self::DryRun),
+            "serve" | "service" | "server" => Ok(Self::Service),
+            _ => Err(()),
+        }
+    }
+}
+
+impl std::fmt::Display for BootstrapMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Service => write!(f, "service"),
+            Self::Migrate => write!(f, "migrate"),
+            Self::DryRun => write!(f, "dry-run"),
+        }
+    }
+}
+
 impl BootstrapMode {
     /// Parses a mode from command-line arguments.
-    ///
-    /// Recognizes:
-    /// - `"migrate"`, `"--migrate"`, `"-m"`, `"migration"` -> `BootstrapMode::Migrate`
-    /// - `"dry-run"`, `"--dry-run"`, `"dry_run"`, `"dryrun"`, `"check"`, `"--check"` -> `BootstrapMode::DryRun`
-    /// - `"serve"`, `"--serve"`, `"service"`, `"--service"`, `"server"`, `"--server"` -> `BootstrapMode::Service`
-    pub fn from_args(args: impl IntoIterator<Item = String>) -> Option<Self> {
-        for arg in args {
-            let s = arg.trim();
-            if s.eq_ignore_ascii_case("migrate")
-                || s.eq_ignore_ascii_case("--migrate")
-                || s == "-m"
-                || s.eq_ignore_ascii_case("migration")
-            {
-                return Some(Self::Migrate);
-            }
-            if s.eq_ignore_ascii_case("dry-run")
-                || s.eq_ignore_ascii_case("--dry-run")
-                || s.eq_ignore_ascii_case("dry_run")
-                || s.eq_ignore_ascii_case("dryrun")
-                || s.eq_ignore_ascii_case("check")
-                || s.eq_ignore_ascii_case("--check")
-            {
-                return Some(Self::DryRun);
-            }
-            if s.eq_ignore_ascii_case("serve")
-                || s.eq_ignore_ascii_case("--serve")
-                || s.eq_ignore_ascii_case("service")
-                || s.eq_ignore_ascii_case("--service")
-                || s.eq_ignore_ascii_case("server")
-                || s.eq_ignore_ascii_case("--server")
-            {
-                return Some(Self::Service);
-            }
-        }
-        None
+    pub fn from_args<I, S>(args: I) -> Option<Self>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        args.into_iter().find_map(|arg| arg.as_ref().parse().ok())
     }
 
     /// Parses a mode from environment variables `BOOTSTRAP_MODE`, `LUMINAIR_MODE`, or `APP_MODE`.
     pub fn from_env() -> Option<Self> {
-        let val = std::env::var("BOOTSTRAP_MODE")
-            .or_else(|_| std::env::var("LUMINAIR_MODE"))
-            .or_else(|_| std::env::var("APP_MODE"))
-            .ok()?;
-
-        let s = val.trim();
-        if s.eq_ignore_ascii_case("migrate")
-            || s.eq_ignore_ascii_case("--migrate")
-            || s == "-m"
-            || s.eq_ignore_ascii_case("migration")
-        {
-            return Some(Self::Migrate);
-        }
-        if s.eq_ignore_ascii_case("dry-run")
-            || s.eq_ignore_ascii_case("--dry-run")
-            || s.eq_ignore_ascii_case("dry_run")
-            || s.eq_ignore_ascii_case("dryrun")
-            || s.eq_ignore_ascii_case("check")
-            || s.eq_ignore_ascii_case("--check")
-        {
-            return Some(Self::DryRun);
-        }
-        if s.eq_ignore_ascii_case("serve")
-            || s.eq_ignore_ascii_case("--serve")
-            || s.eq_ignore_ascii_case("service")
-            || s.eq_ignore_ascii_case("--service")
-            || s.eq_ignore_ascii_case("server")
-            || s.eq_ignore_ascii_case("--server")
-        {
-            return Some(Self::Service);
-        }
-        None
+        const ENV_VARS: [&str; 3] = ["BOOTSTRAP_MODE", "LUMINAIR_MODE", "APP_MODE"];
+        ENV_VARS
+            .into_iter()
+            .find_map(|var| std::env::var(var).ok())
+            .and_then(|val| val.parse().ok())
     }
 
     /// Resolves the bootstrap mode by checking CLI arguments first, then environment variables,
     /// defaulting to `BootstrapMode::Service`.
-    pub fn from_args_or_env(args: impl IntoIterator<Item = String>) -> Self {
+    pub fn from_args_or_env<I, S>(args: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         Self::from_args(args)
             .or_else(Self::from_env)
             .unwrap_or_default()
@@ -137,7 +128,11 @@ impl ServerConfig {
     }
 
     /// Loads server configuration checking command-line arguments for mode, falling back to environment.
-    pub fn from_args_and_env(args: impl IntoIterator<Item = String>) -> Result<Self, ConfigError> {
+    pub fn from_args_and_env<I, S>(args: I) -> Result<Self, ConfigError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         let mode = BootstrapMode::from_args_or_env(args);
         Self::from_env_with_mode(mode)
     }
@@ -272,32 +267,89 @@ mod tests {
     #[test]
     fn test_bootstrap_mode_from_args() {
         assert_eq!(
-            BootstrapMode::from_args(vec!["app".into(), "migrate".into()]),
+            BootstrapMode::from_args(["app", "migrate"]),
             Some(BootstrapMode::Migrate)
         );
         assert_eq!(
-            BootstrapMode::from_args(vec!["app".into(), "--migrate".into()]),
+            BootstrapMode::from_args(["app", "--migrate"]),
             Some(BootstrapMode::Migrate)
         );
         assert_eq!(
-            BootstrapMode::from_args(vec!["app".into(), "dry-run".into()]),
+            BootstrapMode::from_args(["app", "-m"]),
+            Some(BootstrapMode::Migrate)
+        );
+        assert_eq!(
+            BootstrapMode::from_args(["app", "dry-run"]),
             Some(BootstrapMode::DryRun)
         );
         assert_eq!(
-            BootstrapMode::from_args(vec!["app".into(), "--dry-run".into()]),
+            BootstrapMode::from_args(["app", "--dry-run"]),
             Some(BootstrapMode::DryRun)
         );
         assert_eq!(
-            BootstrapMode::from_args(vec!["app".into(), "check".into()]),
+            BootstrapMode::from_args(["app", "dry_run"]),
             Some(BootstrapMode::DryRun)
         );
         assert_eq!(
-            BootstrapMode::from_args(vec!["app".into(), "serve".into()]),
+            BootstrapMode::from_args(["app", "check"]),
+            Some(BootstrapMode::DryRun)
+        );
+        assert_eq!(
+            BootstrapMode::from_args(["app", "serve"]),
             Some(BootstrapMode::Service)
         );
         assert_eq!(
-            BootstrapMode::from_args(vec!["app".into(), "unknown".into()]),
-            None
+            BootstrapMode::from_args(["app", "--service"]),
+            Some(BootstrapMode::Service)
+        );
+        assert_eq!(BootstrapMode::from_args(["app", "unknown"]), None);
+    }
+
+    #[test]
+    fn test_bootstrap_mode_from_str() {
+        assert_eq!("migrate".parse(), Ok(BootstrapMode::Migrate));
+        assert_eq!("--migrate".parse(), Ok(BootstrapMode::Migrate));
+        assert_eq!("-m".parse(), Ok(BootstrapMode::Migrate));
+        assert_eq!("migration".parse(), Ok(BootstrapMode::Migrate));
+        assert_eq!("MIGRATE".parse(), Ok(BootstrapMode::Migrate));
+
+        assert_eq!("dry-run".parse(), Ok(BootstrapMode::DryRun));
+        assert_eq!("--dry-run".parse(), Ok(BootstrapMode::DryRun));
+        assert_eq!("dry_run".parse(), Ok(BootstrapMode::DryRun));
+        assert_eq!("DRY_RUN".parse(), Ok(BootstrapMode::DryRun));
+        assert_eq!("dryrun".parse(), Ok(BootstrapMode::DryRun));
+        assert_eq!("check".parse(), Ok(BootstrapMode::DryRun));
+
+        assert_eq!("serve".parse(), Ok(BootstrapMode::Service));
+        assert_eq!("--serve".parse(), Ok(BootstrapMode::Service));
+        assert_eq!("service".parse(), Ok(BootstrapMode::Service));
+        assert_eq!("server".parse(), Ok(BootstrapMode::Service));
+
+        assert!("unknown".parse::<BootstrapMode>().is_err());
+        assert!("".parse::<BootstrapMode>().is_err());
+        assert!(
+            "--some-very-long-unknown-argument"
+                .parse::<BootstrapMode>()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_bootstrap_mode_display() {
+        assert_eq!(BootstrapMode::Service.to_string(), "service");
+        assert_eq!(BootstrapMode::Migrate.to_string(), "migrate");
+        assert_eq!(BootstrapMode::DryRun.to_string(), "dry-run");
+    }
+
+    #[test]
+    fn test_bootstrap_mode_from_args_borrowed() {
+        assert_eq!(
+            BootstrapMode::from_args(["app", "migrate"]),
+            Some(BootstrapMode::Migrate)
+        );
+        assert_eq!(
+            BootstrapMode::from_args(["app", "--dry_run"]),
+            Some(BootstrapMode::DryRun)
         );
     }
 

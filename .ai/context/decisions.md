@@ -430,6 +430,9 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
 - **Unified Bootstrap Outcome (`BootstrapOutcome`)**:
   - `AppContainer::bootstrap_with_mode` dispatches between `BootstrapOutcome::Service(container)`, `BootstrapOutcome::Migrated(summary)`, and `BootstrapOutcome::DryRunValidated(summary)`.
   - `AppContainer::bootstrap` retains full backward compatibility for existing tests and callers.
+- **Zero-Allocation Stack-Normalized Mode Parsing (`FromStr`)**:
+  - Implemented `std::str::FromStr` on `BootstrapMode` with zero heap allocations using a 16-byte stack buffer to normalize leading dashes (`--`, `-`), uppercase characters, and underscores (`_` $\rightarrow$ `-`).
+  - Unified `from_args` and `from_env` to share the single `FromStr` parser via `args.into_iter().find_map(|a| a.as_ref().parse().ok())` accepting any `AsRef<str>` type.
 
 
 
