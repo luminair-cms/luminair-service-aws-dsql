@@ -6,5 +6,8 @@
 pub mod config;
 pub mod container;
 
-pub use config::{ConfigError, ServerConfig};
-pub use container::{AppContainer, AppContainerBuilder, BootstrapError, ContainerBuildError};
+pub use config::{BootstrapMode, ConfigError, ServerConfig};
+pub use container::{
+    AppContainer, AppContainerBuilder, BootstrapError, BootstrapOutcome, ContainerBuildError,
+    DryRunSummary, MigrationSummary, mask_database_url,
+};

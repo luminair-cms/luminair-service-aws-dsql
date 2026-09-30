@@ -414,5 +414,23 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
   - In HTTP route handlers, `state.context.schema.find_type(&type_id)` or `find_type_by_name(&slug)` yields `&'static DocumentType`. The reference `&doc_type.id` is `&'static DocumentTypeId`, which is a simple pointer copy (`Copy`).
   - Completely eliminated heap string allocations and `.clone()` calls across the entire HTTP $\rightarrow$ Service $\rightarrow$ Repository execution path for every document request.
 
+## 2026-09-30 — Bootstrap Execution Modes (`Service`, `Migrate`, `DryRun`)
+
+- **Multi-Mode Bootstrapping (`BootstrapMode`)**:
+  - Added `BootstrapMode` enum with `Service` (default), `Migrate` (migration-only), and `DryRun` (offline configuration and schema test).
+  - Can be activated via CLI arguments (`luminair serve`, `luminair migrate`, `luminair dry-run`, flags `--migrate`, `--dry-run`, `check`), or environment variable `BOOTSTRAP_MODE`.
+  - Added CLI usage/help output via `-h` / `--help`.
+- **Migration CLI Mode (`AppContainer::run_migrations_only`)**:
+  - Connects to the database pool, executes static migrations (`run_migrations`) and dynamic schema sync (`sync_schemas`), reports executed DDL statements, and exits cleanly.
+  - Tailored for init-containers (Kubernetes), ECS migration tasks, and CI/CD pipelines without launching HTTP server listeners or requiring auth validator tokens.
+- **Dry-Run Mode (`AppContainer::dry_run`)**:
+  - Validates environment variables (`DATABASE_URL` protocol check, connection options, port), token validator initialization (`SecretTokenValidator` or `JwksTokenValidator`), and loads/validates all declarative JSON schemas and relations from `SCHEMA_DIR`.
+  - Builds the desired database schema AST in-memory and outputs a comprehensive validation summary (server address, masked database credentials, count and names of loaded document types and relations, default and available locales, target table counts).
+  - Completely offline: does not connect to, mutate, or require a running database.
+- **Unified Bootstrap Outcome (`BootstrapOutcome`)**:
+  - `AppContainer::bootstrap_with_mode` dispatches between `BootstrapOutcome::Service(container)`, `BootstrapOutcome::Migrated(summary)`, and `BootstrapOutcome::DryRunValidated(summary)`.
+  - `AppContainer::bootstrap` retains full backward compatibility for existing tests and callers.
+
+
 
 

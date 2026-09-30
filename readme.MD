@@ -26,6 +26,7 @@ The service is configured entirely via environment variables parsed at startup b
 
 | Variable | Type | Required | Default | Description |
 |---|---|---|---|---|
+| `BOOTSTRAP_MODE` | String | No | `service` | Bootstrap execution mode: `service` (default), `migrate` (migration-only), or `dry-run` (validation only). Can also be passed as CLI arguments. |
 | `DATABASE_URL` | String | **Yes** | — | PostgreSQL or AWS Aurora DSQL connection URL (e.g. `postgres://user:pass@localhost:5432/luminair`). |
 | `DATABASE_MAX_CONNECTIONS` | u32 | No | `20` | Maximum size of the SQLx connection pool. |
 | `SCHEMA_DIR` | Path | No | `schema` | Path to directory containing schema definitions (`document-types/*.json`, `relations/*.json`). |
@@ -38,6 +39,48 @@ The service is configured entirely via environment variables parsed at startup b
 | `BOOTSTRAP_AUTH_TYPE` | String | No | `oidc` | Descriptive auth provider identifier stored in the shadow user record for the bootstrap admin (e.g., `cognito`, `keycloak`, `oidc`). |
 
 > **\*Authentication Requirement**: At least one of `AUTH_SECRET` or `AUTH_ISSUER_URL` must be configured. If neither is set, server initialization will fail with an error. If `AUTH_SECRET` is set, HMAC symmetric validation takes precedence.
+
+### Bootstrap & CLI Execution Modes
+
+Luminair supports three bootstrap modes, selectable via CLI subcommands, flags, or the `BOOTSTRAP_MODE` environment variable:
+
+1. **Standard Service Mode (default)**:
+   ```bash
+   # CLI command
+   luminair
+   # or
+   luminair serve
+
+   # Or via environment variable
+   BOOTSTRAP_MODE=service luminair
+   ```
+   Connects to the database pool, executes static migrations, synchronizes dynamic document schemas, initializes authentication, runs the idempotent administrator bootstrap hook, and starts the Axum HTTP REST server.
+
+2. **Migration-Only CLI Mode**:
+   ```bash
+   # CLI command
+   luminair migrate
+   # or
+   luminair --migrate
+
+   # Or via environment variable
+   BOOTSTRAP_MODE=migrate luminair
+   ```
+   Connects to the database pool, executes static migrations (`run_migrations`) and dynamic schema synchronization (`sync_schemas`), prints executed DDL statements, and immediately exits. Ideal for Kubernetes init-containers, AWS ECS migration tasks, and CI/CD deployment pipelines.
+
+3. **Dry-Run CLI Mode**:
+   ```bash
+   # CLI command
+   luminair dry-run
+   # or
+   luminair --dry-run
+   # or
+   luminair check
+
+   # Or via environment variable
+   BOOTSTRAP_MODE=dry-run luminair
+   ```
+   Loads and validates the configuration (`DATABASE_URL` format, auth token validator setup) and all declarative schemas from `SCHEMA_DIR` (`document-types/` and `relations/`) without connecting to or mutating the database. Ideal for pre-deployment checks, linting, and CI validation pipelines.
 
 ### Example Configurations
 

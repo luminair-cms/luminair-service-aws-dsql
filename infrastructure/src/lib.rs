@@ -16,8 +16,8 @@ pub use auth::{
     JwksTokenValidator, MockTokenValidator, SecretTokenValidator, TokenValidator, run_bootstrap,
 };
 pub use composition::{
-    AppContainer, AppContainerBuilder, BootstrapError, ConfigError, ContainerBuildError,
-    ServerConfig,
+    AppContainer, AppContainerBuilder, BootstrapError, BootstrapMode, BootstrapOutcome,
+    ConfigError, ContainerBuildError, DryRunSummary, MigrationSummary, ServerConfig,
 };
 pub use migrations::{MIGRATOR, ROLE_ADMIN_ID, ROLE_EDITOR_ID, ROLE_VIEWER_ID, run_migrations};
 pub use repositories::{
