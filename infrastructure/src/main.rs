@@ -1,7 +1,8 @@
 //! Luminair service entry point and composition root.
 
 use infrastructure::api::create_router;
-use infrastructure::composition::{AppContainer, BootstrapOutcome, ServerConfig};
+use infrastructure::cli::{CliOutcome, ServerConfig, print_help, run};
+use infrastructure::container::AppContainer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -15,90 +16,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     init_tracing();
 
-    let config = ServerConfig::from_args_and_env(args)?;
+    let config = ServerConfig::from_args(args)?;
 
-    match AppContainer::bootstrap_with_mode(&config, config.mode).await? {
-        BootstrapOutcome::Service(container) => {
-            tracing::info!("Starting Luminair HTTP service...");
-            run_server(&config, container).await?;
-        }
-        BootstrapOutcome::Migrated(summary) => {
-            tracing::info!(
-                "Migration CLI mode complete: static migrations applied, {} dynamic DDL statements executed.",
-                summary.executed_statements.len()
-            );
-            println!("\n=== Luminair Database Migration Complete ===");
-            println!("  Static Migrations:  Applied");
-            println!(
-                "  Dynamic Statements: {}",
-                summary.executed_statements.len()
-            );
-            for stmt in &summary.executed_statements {
-                println!("    - {stmt}");
-            }
-            println!("============================================\n");
-        }
-        BootstrapOutcome::DryRunValidated(summary) => {
-            tracing::info!("Dry-run validation complete: configuration and schemas are valid.");
-            println!("\n=== Luminair Dry-Run Configuration & Schema Validation ===");
-            println!("  Server Address:        {}", summary.server_addr);
-            println!("  Database URL:          {}", summary.database_url_masked);
-            println!("  Max DB Connections:    {}", summary.max_db_connections);
-            println!("  Schema Directory:      {}", summary.schema_dir.display());
-            println!("  Document Types Loaded: {}", summary.document_types_count);
-            if !summary.document_type_names.is_empty() {
-                println!(
-                    "  Document Types:        {}",
-                    summary.document_type_names.join(", ")
-                );
-            }
-            println!("  Relations Loaded:      {}", summary.relations_count);
-            println!("  Default Locale:        {}", summary.default_locale);
-            if !summary.available_locales.is_empty() {
-                println!(
-                    "  Available Locales:     {}",
-                    summary.available_locales.join(", ")
-                );
-            }
-            println!("  Target Schema Tables:  {}", summary.target_tables_count);
-            println!("  Auth Mode:             {}", summary.auth_mode);
-            println!("==========================================================\n");
-        }
+    match run(&config).await? {
+        CliOutcome::Service(container) => run_server(&config, container).await?,
+        CliOutcome::Migrated(summary) => print!("{summary}"),
+        CliOutcome::DryRunValidated(summary) => print!("{summary}"),
     }
 
     Ok(())
-}
-
-/// Prints CLI usage instructions and available environment variables.
-fn print_help() {
-    println!(
-        r#"Luminair CMS Backend Service
-
-Usage:
-  luminair [COMMAND]
-
-Commands:
-  serve, service    Run standard HTTP service mode (default)
-  migrate           Run static migrations and dynamic schema synchronization, then exit
-  dry-run, check    Validate configuration, schemas, and auth settings without database connection
-
-Options:
-  -h, --help        Show this help message
-
-Environment Variables:
-  BOOTSTRAP_MODE            Set mode via environment ('service', 'migrate', 'dry-run')
-  DATABASE_URL              PostgreSQL or AWS Aurora DSQL connection URL
-  DATABASE_MAX_CONNECTIONS  Maximum database connection pool size (default 20)
-  SCHEMA_DIR                Schema definitions directory (default 'schema')
-  HOST                      Server host address (default '0.0.0.0')
-  PORT                      Server TCP port (default 8080)
-  AUTH_SECRET               HMAC secret key for symmetric JWT validation
-  AUTH_ISSUER_URL           OIDC issuer URL for JWKS asymmetric JWT validation
-  AUTH_AUDIENCE             Expected JWT audience (aud claim)
-  BOOTSTRAP_ADMIN_SUB       OIDC sub claim for bootstrap administrator
-  BOOTSTRAP_AUTH_TYPE       Auth provider descriptor (default 'oidc')
-"#
-    );
 }
 
 /// Initializes structured logging and tracing using environment filter directives.

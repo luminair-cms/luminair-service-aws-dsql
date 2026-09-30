@@ -20,13 +20,13 @@ and are swappable without touching business logic.
 
 ## Configuration
 
-The service is configured entirely via environment variables parsed at startup by `ServerConfig` in the `infrastructure` composition layer ([`infrastructure/src/composition/config.rs`](infrastructure/src/composition/config.rs)).
+The service is configured entirely via environment variables parsed at startup by `ServerConfig` in the `infrastructure` CLI layer ([`infrastructure/src/cli/config.rs`](infrastructure/src/cli/config.rs)).
 
 ### Environment Variables
 
 | Variable | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `BOOTSTRAP_MODE` | String | No | `service` | Bootstrap execution mode: `service` (default), `migrate` (migration-only), or `dry-run` (validation only). Can also be passed as CLI arguments. |
+| `RUN_MODE` | String | No | `service` | Execution mode: `service` (default), `migrate` (migration-only), or `dry-run` (validation only). Can also be passed as CLI arguments. |
 | `DATABASE_URL` | String | **Yes** | — | PostgreSQL or AWS Aurora DSQL connection URL (e.g. `postgres://user:pass@localhost:5432/luminair`). |
 | `DATABASE_MAX_CONNECTIONS` | u32 | No | `20` | Maximum size of the SQLx connection pool. |
 | `SCHEMA_DIR` | Path | No | `schema` | Path to directory containing schema definitions (`document-types/*.json`, `relations/*.json`). |
@@ -42,7 +42,7 @@ The service is configured entirely via environment variables parsed at startup b
 
 ### Bootstrap & CLI Execution Modes
 
-Luminair supports three bootstrap modes, selectable via CLI subcommands, flags, or the `BOOTSTRAP_MODE` environment variable:
+Luminair supports three bootstrap modes, selectable via CLI subcommands, flags, or the `RUN_MODE` environment variable:
 
 1. **Standard Service Mode (default)**:
    ```bash
@@ -52,7 +52,7 @@ Luminair supports three bootstrap modes, selectable via CLI subcommands, flags, 
    luminair serve
 
    # Or via environment variable
-   BOOTSTRAP_MODE=service luminair
+   RUN_MODE=service luminair
    ```
    Connects to the database pool, executes static migrations, synchronizes dynamic document schemas, initializes authentication, runs the idempotent administrator bootstrap hook, and starts the Axum HTTP REST server.
 
@@ -64,7 +64,7 @@ Luminair supports three bootstrap modes, selectable via CLI subcommands, flags, 
    luminair --migrate
 
    # Or via environment variable
-   BOOTSTRAP_MODE=migrate luminair
+   RUN_MODE=migrate luminair
    ```
    Connects to the database pool, executes static migrations (`run_migrations`) and dynamic schema synchronization (`sync_schemas`), prints executed DDL statements, and immediately exits. Ideal for Kubernetes init-containers, AWS ECS migration tasks, and CI/CD deployment pipelines.
 
@@ -74,11 +74,9 @@ Luminair supports three bootstrap modes, selectable via CLI subcommands, flags, 
    luminair dry-run
    # or
    luminair --dry-run
-   # or
-   luminair check
 
    # Or via environment variable
-   BOOTSTRAP_MODE=dry-run luminair
+   RUN_MODE=dry-run luminair
    ```
    Loads and validates the configuration (`DATABASE_URL` format, auth token validator setup) and all declarative schemas from `SCHEMA_DIR` (`document-types/` and `relations/`) without connecting to or mutating the database. Ideal for pre-deployment checks, linting, and CI validation pipelines.
 

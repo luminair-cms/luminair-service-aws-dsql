@@ -10,7 +10,7 @@ use domain::system::SystemContext;
 use infrastructure::api::create_router;
 use infrastructure::api::dto::SingleResponse;
 use infrastructure::auth::{AuthConfig, Claims, SecretTokenValidator, run_bootstrap};
-use infrastructure::composition::AppContainer;
+use infrastructure::container::AppContainer;
 use infrastructure::migrations::{ROLE_EDITOR_ID, run_migrations};
 use infrastructure::repositories::{SqlxAccessRequestRepository, SqlxUserRoleAssignmentRepository};
 use infrastructure::schema_loader::{SafetyPolicy, load_schema_registry, sync_schemas};

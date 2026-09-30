@@ -2,7 +2,8 @@
 
 pub mod api;
 pub mod auth;
-pub mod composition;
+pub mod cli;
+pub mod container;
 pub mod migrations;
 pub mod repositories;
 pub mod schema_loader;
@@ -15,10 +16,12 @@ pub use auth::{
     AuthConfig, AuthContextResolver, AuthError, AuthUser, AuthenticatedClaims, Claims,
     JwksTokenValidator, MockTokenValidator, SecretTokenValidator, TokenValidator, run_bootstrap,
 };
-pub use composition::{
-    AppContainer, AppContainerBuilder, BootstrapError, BootstrapMode, BootstrapOutcome,
-    ConfigError, ContainerBuildError, DryRunSummary, MigrationSummary, ServerConfig,
+pub use cli::{
+    BootstrapError, BootstrapMode, BootstrapOutcome, CliError, CliOutcome, ConfigError,
+    DryRunSummary, MigrationSummary, RunMode, ServerConfig, dry_run, mask_database_url, migrate,
+    print_help, run,
 };
+pub use container::{AppContainer, AppContainerBuilder, ContainerBuildError};
 pub use migrations::{MIGRATOR, ROLE_ADMIN_ID, ROLE_EDITOR_ID, ROLE_VIEWER_ID, run_migrations};
 pub use repositories::{
     ShadowUser, SqlxAccessRequestRepository, SqlxDocumentInstanceRepository, SqlxRoleRepository,

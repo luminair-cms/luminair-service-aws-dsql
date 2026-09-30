@@ -414,25 +414,21 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
   - In HTTP route handlers, `state.context.schema.find_type(&type_id)` or `find_type_by_name(&slug)` yields `&'static DocumentType`. The reference `&doc_type.id` is `&'static DocumentTypeId`, which is a simple pointer copy (`Copy`).
   - Completely eliminated heap string allocations and `.clone()` calls across the entire HTTP $\rightarrow$ Service $\rightarrow$ Repository execution path for every document request.
 
-## 2026-09-30 — Bootstrap Execution Modes (`Service`, `Migrate`, `DryRun`)
+## 2026-09-30 — Decomposition of `composition` into `container` and `cli` (Single Responsibility Principle)
 
-- **Multi-Mode Bootstrapping (`BootstrapMode`)**:
-  - Added `BootstrapMode` enum with `Service` (default), `Migrate` (migration-only), and `DryRun` (offline configuration and schema test).
-  - Can be activated via CLI arguments (`luminair serve`, `luminair migrate`, `luminair dry-run`, flags `--migrate`, `--dry-run`, `check`), or environment variable `BOOTSTRAP_MODE`.
-  - Added CLI usage/help output via `-h` / `--help`.
-- **Migration CLI Mode (`AppContainer::run_migrations_only`)**:
-  - Connects to the database pool, executes static migrations (`run_migrations`) and dynamic schema sync (`sync_schemas`), reports executed DDL statements, and exits cleanly.
-  - Tailored for init-containers (Kubernetes), ECS migration tasks, and CI/CD pipelines without launching HTTP server listeners or requiring auth validator tokens.
-- **Dry-Run Mode (`AppContainer::dry_run`)**:
-  - Validates environment variables (`DATABASE_URL` protocol check, connection options, port), token validator initialization (`SecretTokenValidator` or `JwksTokenValidator`), and loads/validates all declarative JSON schemas and relations from `SCHEMA_DIR`.
-  - Builds the desired database schema AST in-memory and outputs a comprehensive validation summary (server address, masked database credentials, count and names of loaded document types and relations, default and available locales, target table counts).
-  - Completely offline: does not connect to, mutate, or require a running database.
-- **Unified Bootstrap Outcome (`BootstrapOutcome`)**:
-  - `AppContainer::bootstrap_with_mode` dispatches between `BootstrapOutcome::Service(container)`, `BootstrapOutcome::Migrated(summary)`, and `BootstrapOutcome::DryRunValidated(summary)`.
-  - `AppContainer::bootstrap` retains full backward compatibility for existing tests and callers.
-- **Zero-Allocation Stack-Normalized Mode Parsing (`FromStr`)**:
-  - Implemented `std::str::FromStr` on `BootstrapMode` with zero heap allocations using a 16-byte stack buffer to normalize leading dashes (`--`, `-`), uppercase characters, and underscores (`_` $\rightarrow$ `-`).
-  - Unified `from_args` and `from_env` to share the single `FromStr` parser via `args.into_iter().find_map(|a| a.as_ref().parse().ok())` accepting any `AsRef<str>` type.
+- **Decoupled DI Container from CLI Actions**:
+  - Previously, `composition/container.rs` accumulated multiple conflicting responsibilities: DI container assembly (`AppContainer`), database schema migrations (`migrate`), offline configuration testing (`dry_run`), credential masking, and CLI dispatch.
+  - Decomposed into two dedicated modules adhering to SRP:
+    1. **`infrastructure::container`**: Exclusively responsible for constructing, wiring, and holding the application DI container (`AppContainer`, `AppContainerBuilder`, `ContainerBuildError`). Has zero knowledge of CLI commands, migrations, or database URLs.
+    2. **`infrastructure::cli`**: Exclusively responsible for CLI actions, parsing, and execution:
+       - `cli/config.rs`: `ServerConfig`, `RunMode` (`Service`, `Migrate`, `DryRun`), `ConfigError`, `print_help()`.
+       - `cli/migrate.rs`: `migrate(&ServerConfig) -> Result<MigrationSummary, CliError>`.
+       - `cli/dry_run.rs`: `dry_run(&ServerConfig) -> Result<DryRunSummary, CliError>`, `mask_database_url()`.
+       - `cli/runner.rs`: `run(&ServerConfig) -> Result<CliOutcome, CliError>`, `start_service()`.
+- **Streamlined `main.rs`**:
+  - `main.rs` dispatches via `cli::run(&config).await?` in ~55 lines with clean `Display` implementations for all summaries.
+- **Backward-Compatible Type Aliases**:
+  - Provided `BootstrapMode = RunMode`, `BootstrapOutcome = CliOutcome`, and `BootstrapError = CliError` in `cli::mod` and `infrastructure::lib`.
 
 
 
