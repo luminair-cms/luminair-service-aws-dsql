@@ -11,7 +11,7 @@ use domain::auth::{
 use domain::common::{DisplayName, Email};
 use domain::schema::DocumentTypeId;
 use infrastructure::migrations::{ROLE_ADMIN_ID, ROLE_EDITOR_ID, run_migrations};
-use infrastructure::repositories::{
+use infrastructure::persistence::repositories::{
     SqlxAccessRequestRepository, SqlxRoleRepository, SqlxUserRoleAssignmentRepository,
 };
 use sqlx::PgPool;

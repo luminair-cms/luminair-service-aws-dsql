@@ -6,7 +6,6 @@ pub mod cli;
 pub mod container;
 pub mod migrations;
 pub mod persistence;
-pub mod repositories;
 pub mod schema_loader;
 
 pub use api::{
@@ -24,7 +23,7 @@ pub use cli::{
 };
 pub use container::{AppContainer, AppContainerBuilder, ContainerBuildError};
 pub use migrations::{MIGRATOR, ROLE_ADMIN_ID, ROLE_EDITOR_ID, ROLE_VIEWER_ID, run_migrations};
-pub use repositories::{
+pub use persistence::repositories::{
     ShadowUser, SqlxAccessRequestRepository, SqlxDocumentInstanceRepository, SqlxRoleRepository,
     SqlxShadowUserRepository, SqlxUserRoleAssignmentRepository,
 };

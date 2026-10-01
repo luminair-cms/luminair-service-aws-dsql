@@ -10,7 +10,7 @@ use domain::auth::{
 
 use super::claims::Claims;
 use super::errors::AuthError;
-use crate::repositories::SqlxShadowUserRepository;
+use crate::persistence::repositories::SqlxShadowUserRepository;
 
 /// Service resolving validated JWT claims into authorized `CallerContext` or enrollment error.
 #[derive(Clone)]

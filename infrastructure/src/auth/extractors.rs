@@ -13,7 +13,7 @@ use super::errors::AuthError;
 use super::resolver::AuthContextResolver;
 use super::shadow_users::SqlxShadowUserRepository;
 use super::validator::TokenValidator;
-use crate::repositories::{
+use crate::persistence::repositories::{
     SqlxAccessRequestRepository, SqlxRoleRepository, SqlxUserRoleAssignmentRepository,
 };
 

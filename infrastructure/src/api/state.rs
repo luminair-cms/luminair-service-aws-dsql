@@ -12,7 +12,7 @@ use sqlx::PgPool;
 use super::health::HealthChecker;
 use crate::auth::AuthAppState;
 use crate::container::{AppContainer, ContainerBuildError};
-use crate::repositories::{
+use crate::persistence::repositories::{
     SqlxAccessRequestRepository, SqlxDocumentInstanceRepository, SqlxRoleRepository,
     SqlxUserRoleAssignmentRepository,
 };

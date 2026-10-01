@@ -5,7 +5,6 @@
 //! 2. Backward-compatible re-exports from `crate::persistence::migration`
 
 pub mod loader;
-pub mod naming;
 
 use std::path::Path;
 use domain::schema::SchemaRegistry;
@@ -25,8 +24,6 @@ pub use crate::persistence::migration::{
     build_desired_schema, compute_diff, execute_migration_plan, introspect_database_schema,
     plan_migrations, step_to_sql, sync_dynamic_schemas,
 };
-
-pub use naming::*;
 
 /// Errors encountered during schema synchronization.
 #[derive(Debug, Error)]

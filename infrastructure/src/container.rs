@@ -12,7 +12,7 @@ use thiserror::Error;
 use crate::api::health::HealthChecker;
 use crate::api::state::HttpState;
 use crate::auth::{AuthAppState, TokenValidator};
-use crate::repositories::{
+use crate::persistence::repositories::{
     SqlxAccessRequestRepository, SqlxDocumentInstanceRepository, SqlxRoleRepository,
     SqlxShadowUserRepository, SqlxUserRoleAssignmentRepository,
 };

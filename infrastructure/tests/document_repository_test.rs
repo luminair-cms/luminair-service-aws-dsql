@@ -22,7 +22,7 @@ use domain::content::{
 };
 use domain::schema::{AttributeId, DocumentTypeId, SchemaRegistry};
 use infrastructure::migrations::run_migrations;
-use infrastructure::repositories::SqlxDocumentInstanceRepository;
+use infrastructure::persistence::repositories::SqlxDocumentInstanceRepository;
 use infrastructure::schema_loader::{SafetyPolicy, load_schema_registry, sync_schemas};
 use sqlx::PgPool;
 use uuid::Uuid;

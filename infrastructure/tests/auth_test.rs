@@ -18,7 +18,7 @@ use infrastructure::auth::{
     SecretTokenValidator, SqlxShadowUserRepository, TokenValidator, run_bootstrap,
 };
 use infrastructure::migrations::{ROLE_ADMIN_ID, ROLE_EDITOR_ID, run_migrations};
-use infrastructure::repositories::{SqlxAccessRequestRepository, SqlxUserRoleAssignmentRepository};
+use infrastructure::persistence::repositories::{SqlxAccessRequestRepository, SqlxUserRoleAssignmentRepository};
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;

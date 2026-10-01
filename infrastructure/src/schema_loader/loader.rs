@@ -27,7 +27,7 @@ use std::path::Path;
 use thiserror::Error;
 use uuid::Uuid;
 
-use super::naming::is_reserved_sql_keyword;
+use crate::persistence::naming::is_reserved_sql_keyword;
 
 #[derive(Debug, Error)]
 pub enum SchemaLoaderError {
