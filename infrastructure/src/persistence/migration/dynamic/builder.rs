@@ -17,7 +17,7 @@ use super::model::{
     ColumnDefinition, DatabaseSchema, ForeignKeyAction, ForeignKeyDefinition, IndexDefinition,
     SqlColumnType, TableDefinition, TableKind,
 };
-use super::naming::{
+use crate::persistence::naming::{
     attribute_to_column_name, document_type_to_table_name, index_name, kebab_to_snake,
     link_owner_fk_name, link_owner_unique_index_name, link_table_name, link_target_fk_name,
     link_target_index_name, published_fk_name, published_link_table_name, published_table_name,

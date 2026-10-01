@@ -1,47 +1,34 @@
-//! Dynamic Schema Synchronization and JSON Schema Loader.
+//! Declarative JSON Schema Loader and Migration Re-exports.
 //!
-//! Provides end-to-end functionality for Milestone 3B:
-//! 1. Loading declarative JSON schemas from disk
-//! 2. Constructing the domain `SchemaRegistry` and `SystemConfig`
-//! 3. Introspecting live database schema from PostgreSQL / AWS Aurora DSQL
-//! 4. Calculating schema drift and generating topological migration plans
-//! 5. Executing dynamic DDL outside transaction blocks with `sea-query`
+//! Provides:
+//! 1. Loading declarative JSON schemas from disk into `SchemaRegistry` and `SystemConfig`
+//! 2. Backward-compatible re-exports from `crate::persistence::migration`
 
-pub mod builder;
-pub mod diff;
-pub mod executor;
-pub mod introspector;
 pub mod loader;
-pub mod model;
 pub mod naming;
-pub mod planner;
 
+use std::path::Path;
 use domain::schema::SchemaRegistry;
 use domain::system::SystemConfig;
 use sqlx::PgPool;
-use std::path::Path;
 use thiserror::Error;
 
-pub use builder::build_desired_schema;
-pub use diff::{DiffError, MigrationStep, SafetyPolicy, compute_diff};
-pub use executor::{ExecutionSummary, ExecutorError, execute_migration_plan, step_to_sql};
-pub use introspector::{IntrospectorError, SYSTEM_TABLES, introspect_database_schema};
 pub use loader::{
     SchemaLoaderError, load_document_type_from_str, load_relation_from_str, load_schema_registry,
     load_system_config_from_str,
 };
-pub use model::{
-    ColumnDefinition, DatabaseSchema, ForeignKeyAction, ForeignKeyDefinition, IndexDefinition,
-    SqlColumnType, TableDefinition, TableKind,
-};
-pub use naming::{
-    attribute_to_column_name, document_type_to_table_name, foreign_key_column_name, index_name,
-    is_reserved_sql_keyword, junction_table_name, junction_target_index_name, kebab_to_snake,
-    link_owner_fk_name, link_owner_unique_index_name, link_table_name, link_target_fk_name,
-    link_target_index_name, published_fk_name, published_table_name,
-};
-pub use planner::{MigrationPlan, plan_migrations};
 
+pub use crate::persistence::migration::{
+    ColumnDefinition, DatabaseSchema, DiffError, ExecutionSummary, ExecutorError,
+    ForeignKeyAction, ForeignKeyDefinition, IndexDefinition, IntrospectorError, MigrationPlan,
+    MigrationStep, SYSTEM_TABLES, SafetyPolicy, SqlColumnType, TableDefinition, TableKind,
+    build_desired_schema, compute_diff, execute_migration_plan, introspect_database_schema,
+    plan_migrations, step_to_sql, sync_dynamic_schemas,
+};
+
+pub use naming::*;
+
+/// Errors encountered during schema synchronization.
 #[derive(Debug, Error)]
 pub enum SchemaSyncError {
     #[error("Schema loader error: {0}")]

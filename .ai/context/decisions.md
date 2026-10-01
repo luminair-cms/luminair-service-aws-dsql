@@ -430,6 +430,27 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
 - **Backward-Compatible Type Aliases**:
   - Provided `BootstrapMode = RunMode`, `BootstrapOutcome = CliOutcome`, and `BootstrapError = CliError` in `cli::mod` and `infrastructure::lib`.
 
+---
 
+## 2026-10-01 — Persistence Layer Architecture & Modernization (`persistence/`, SeaQuery SQLx, Dynamic Migration Decoupling)
 
-
+- **Centralized Database Naming Providers (`infrastructure::persistence::naming`)**:
+  - Created `DocumentTableNaming` and `LinkTableNaming` encapsulating all table, column, index, and foreign key identifier generation for dynamic document tables and relational junction tables.
+  - Implemented `sea_query::Iden` for static system columns: `BaseSystemColumn` (`id`, `version`, `owner_id`, `publication_state`, `created_at`, `updated_at`, `_singleton`), `PublishedSystemColumn` (`id`, `published_version`, `owner_id`, `created_at`, `updated_at`, `published_at`, `published_by`, `_singleton`), and `LinkColumn` (`owner_id`, `target_id`).
+  - Extracted string sanitization (`kebab_to_snake`, SQL keyword validation) into `persistence::naming::sanitize`.
+- **Decoupled Schema Loading from Persistence Migration**:
+  - `infrastructure::schema_loader` is now strictly responsible for loading declarative JSON schemas from disk into `SchemaRegistry` and `SystemConfig`.
+  - Database schema migration logic (desired schema AST building, database introspection, drift diffing, topological planning, DDL execution, and synchronization orchestration) was moved to `infrastructure::persistence::migration::dynamic`.
+  - Re-exported dynamic migration utilities in `schema_loader` and static embedded migrations in `infrastructure::migrations` for seamless backward compatibility.
+- **Decomposed and Modernized `DocumentInstanceRepository`**:
+  - Moved repository implementations from `infrastructure::repositories` to `infrastructure::persistence::repositories`.
+  - Replaced manual SQL string interpolation and error-prone format strings with type-safe `sea-query` AST generation and `sea-query-sqlx` (`SqlxBinder`).
+  - Extracted query builders, row decoders, and value codecs into `infrastructure::persistence::query`:
+    - `query::codec`: safe conversion between domain `ContentValue` and SeaQuery `Value` / SQLx rows.
+    - `query::filters`: converts domain `FieldFilter` operators into SeaQuery `Condition`.
+    - `query::document`: builds type-safe `build_select_by_id`, `build_select_by_type`, `build_count`, `build_exists`, `build_upsert`, `build_published_upsert`, `build_link_select`, `build_link_batch_insert`, `build_link_pairs_select`, `build_instances_batch_select`.
+  - Wrapped multi-table mutations in `pool.begin().await?` database transactions ensuring atomic draft and published mirror synchronization.
+  - Batched relation link inserts into a single multi-row `INSERT INTO ... ON CONFLICT DO NOTHING` statement instead of $N$ round-trips.
+- **Full Verification**:
+  - 100% of workspace tests pass (89 tests).
+  - Zero warnings on `cargo clippy --workspace --all-targets -- -D warnings`.

@@ -5,6 +5,7 @@ pub mod auth;
 pub mod cli;
 pub mod container;
 pub mod migrations;
+pub mod persistence;
 pub mod repositories;
 pub mod schema_loader;
 

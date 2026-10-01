@@ -23,6 +23,7 @@ jsonwebtoken = { version = "11.1.0", default-features = false, features = ["rust
 
 # Persistence & Database
 sea-query = { version = "=1.0.2", default-features = false, features = ["backend-postgres", "with-uuid", "with-chrono", "with-rust_decimal", "with-json"] }
+sea-query-sqlx = { version = "=0.9.1", default-features = false, features = ["sqlx-postgres", "with-uuid", "with-chrono", "with-rust_decimal", "with-json"] }
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres", "uuid", "chrono", "migrate", "json", "macros", "rust_decimal"] }
 
 # Async & Concurrency

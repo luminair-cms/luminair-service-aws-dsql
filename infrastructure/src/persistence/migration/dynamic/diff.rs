@@ -146,7 +146,7 @@ pub fn compute_diff(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema_loader::model::{
+    use crate::persistence::migration::dynamic::model::{
         ColumnDefinition, SqlColumnType, TableDefinition, TableKind,
     };
 

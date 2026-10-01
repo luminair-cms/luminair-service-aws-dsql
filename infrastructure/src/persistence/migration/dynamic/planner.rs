@@ -105,7 +105,9 @@ pub fn plan_migrations(raw_steps: Vec<MigrationStep>) -> MigrationPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema_loader::model::{IndexDefinition, TableDefinition, TableKind};
+    use crate::persistence::migration::dynamic::model::{
+        IndexDefinition, TableDefinition, TableKind,
+    };
 
     #[test]
     fn test_topological_ordering() {
