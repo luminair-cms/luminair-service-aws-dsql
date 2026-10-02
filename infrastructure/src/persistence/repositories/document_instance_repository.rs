@@ -40,6 +40,14 @@ impl SqlxDocumentInstanceRepository {
             schema_registry,
         }
     }
+
+    pub fn pool(&self) -> &PgPool {
+        &self.pool
+    }
+
+    pub fn schema_registry(&self) -> &'static SchemaRegistry {
+        self.schema_registry
+    }
 }
 
 impl DocumentInstanceRepository for SqlxDocumentInstanceRepository {

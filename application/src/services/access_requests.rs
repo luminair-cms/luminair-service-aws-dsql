@@ -2,7 +2,6 @@
 
 use std::collections::HashSet;
 use std::future::Future;
-use std::sync::Arc;
 
 use chrono::Utc;
 use domain::auth::{
@@ -53,9 +52,9 @@ pub trait AccessRequestsService: Send + Sync + 'static {
 
 /// Generic implementation of `AccessRequestsService` monomorphized over repository adapters.
 pub struct AccessRequestsServiceImpl<A, U, R> {
-    pub access_request_repo: Arc<A>,
-    pub assignment_repo: Arc<U>,
-    pub role_repo: Arc<R>,
+    pub access_request_repo: A,
+    pub assignment_repo: U,
+    pub role_repo: R,
 }
 
 impl<A, U, R> AccessRequestsServiceImpl<A, U, R>
@@ -64,7 +63,7 @@ where
     U: UserRoleAssignmentRepository + 'static,
     R: RoleRepository + 'static,
 {
-    pub fn new(access_request_repo: Arc<A>, assignment_repo: Arc<U>, role_repo: Arc<R>) -> Self {
+    pub fn new(access_request_repo: A, assignment_repo: U, role_repo: R) -> Self {
         Self {
             access_request_repo,
             assignment_repo,
@@ -194,7 +193,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
 
     use domain::auth::{AccessRequestStatus, Role, RoleId, UserId};
     use domain::common::{DisplayName, Email};
@@ -204,17 +202,15 @@ mod tests {
         FakeAccessRequestRepository, FakeRoleRepository, FakeUserRoleAssignmentRepository,
     };
 
-    fn make_test_fixture() -> (
-        AccessRequestsServiceImpl<
-            FakeAccessRequestRepository,
-            FakeUserRoleAssignmentRepository,
-            FakeRoleRepository,
-        >,
-        CallerContext,
-        Role,
-    ) {
-        let access_repo = Arc::new(FakeAccessRequestRepository::new());
-        let assignment_repo = Arc::new(FakeUserRoleAssignmentRepository::new());
+    type TestAccessRequestsService = AccessRequestsServiceImpl<
+        FakeAccessRequestRepository,
+        FakeUserRoleAssignmentRepository,
+        FakeRoleRepository,
+    >;
+
+    fn make_test_fixture() -> (TestAccessRequestsService, CallerContext, Role) {
+        let access_repo = FakeAccessRequestRepository::new();
+        let assignment_repo = FakeUserRoleAssignmentRepository::new();
 
         let editor_role = Role {
             id: RoleId::new(Uuid::now_v7()),
@@ -222,7 +218,7 @@ mod tests {
             description: None,
             permissions: vec![Permission::CreateDocument(None)],
         };
-        let role_repo = Arc::new(FakeRoleRepository::new().with_role(editor_role.clone()));
+        let role_repo = FakeRoleRepository::new().with_role(editor_role.clone());
 
         let service = AccessRequestsServiceImpl::new(access_repo, assignment_repo, role_repo);
 

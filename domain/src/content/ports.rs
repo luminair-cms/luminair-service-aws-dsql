@@ -95,3 +95,4 @@ pub trait DocumentInstanceRepository: Send + Sync {
         type_id: &'static DocumentTypeId,
     ) -> impl Future<Output = Result<bool, DomainError>> + Send;
 }
+

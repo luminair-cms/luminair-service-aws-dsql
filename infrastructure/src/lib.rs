@@ -23,9 +23,9 @@ pub use cli::{
 };
 pub use container::{AppContainer, AppContainerBuilder, ContainerBuildError};
 pub use migrations::{MIGRATOR, ROLE_ADMIN_ID, ROLE_EDITOR_ID, ROLE_VIEWER_ID, run_migrations};
-pub use persistence::repositories::{
-    ShadowUser, SqlxAccessRequestRepository, SqlxDocumentInstanceRepository, SqlxRoleRepository,
-    SqlxShadowUserRepository, SqlxUserRoleAssignmentRepository,
+pub use persistence::{
+    PersistenceContainer, ShadowUser, SqlxAccessRequestRepository, SqlxDocumentInstanceRepository,
+    SqlxRoleRepository, SqlxShadowUserRepository, SqlxUserRoleAssignmentRepository,
 };
 pub use schema_loader::{
     SchemaSyncError, SchemaSyncResult, build_desired_schema, execute_migration_plan,

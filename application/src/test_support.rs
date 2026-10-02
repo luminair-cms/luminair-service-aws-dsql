@@ -1,7 +1,7 @@
 //! In-memory thread-safe fake repositories for application testing.
 
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use domain::auth::{
     AccessRequest, AccessRequestId, AccessRequestRepository, AccessRequestStatus, Role, RoleId,
@@ -15,10 +15,10 @@ use domain::errors::DomainError;
 use domain::schema::{AttributeId, DocumentTypeId};
 
 /// Thread-safe in-memory fake for `DocumentInstanceRepository`.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct FakeDocumentInstanceRepository {
-    pub instances: RwLock<HashMap<DocumentInstanceId, DocumentInstance>>,
-    pub relations: RwLock<RelationMap>,
+    pub instances: Arc<RwLock<HashMap<DocumentInstanceId, DocumentInstance>>>,
+    pub relations: Arc<RwLock<RelationMap>>,
 }
 
 impl FakeDocumentInstanceRepository {
@@ -194,9 +194,9 @@ impl DocumentInstanceRepository for FakeDocumentInstanceRepository {
 }
 
 /// Thread-safe in-memory fake for `RoleRepository`.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct FakeRoleRepository {
-    pub roles: RwLock<HashMap<RoleId, Role>>,
+    pub roles: Arc<RwLock<HashMap<RoleId, Role>>>,
 }
 
 impl FakeRoleRepository {
@@ -257,9 +257,9 @@ impl RoleRepository for FakeRoleRepository {
 }
 
 /// Thread-safe in-memory fake for `UserRoleAssignmentRepository`.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct FakeUserRoleAssignmentRepository {
-    pub assignments: RwLock<Vec<UserRoleAssignment>>,
+    pub assignments: Arc<RwLock<Vec<UserRoleAssignment>>>,
 }
 
 impl FakeUserRoleAssignmentRepository {
@@ -322,9 +322,9 @@ impl UserRoleAssignmentRepository for FakeUserRoleAssignmentRepository {
 }
 
 /// Thread-safe in-memory fake for `AccessRequestRepository`.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct FakeAccessRequestRepository {
-    pub requests: RwLock<HashMap<AccessRequestId, AccessRequest>>,
+    pub requests: Arc<RwLock<HashMap<AccessRequestId, AccessRequest>>>,
 }
 
 impl FakeAccessRequestRepository {

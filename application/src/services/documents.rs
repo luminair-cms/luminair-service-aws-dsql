@@ -2,7 +2,6 @@
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
-use std::sync::Arc;
 
 use chrono::Utc;
 use domain::auth::Permission;
@@ -73,7 +72,7 @@ pub trait DocumentsService: Send + Sync + 'static {
 
 /// Generic implementation of `DocumentsService` monomorphized over repository adapters.
 pub struct DocumentsServiceImpl<R> {
-    pub instance_repo: Arc<R>,
+    pub instance_repo: R,
     pub context: &'static SystemContext,
 }
 
@@ -81,7 +80,7 @@ impl<R> DocumentsServiceImpl<R>
 where
     R: DocumentInstanceRepository + 'static,
 {
-    pub fn new(instance_repo: Arc<R>, context: &'static SystemContext) -> Self {
+    pub fn new(instance_repo: R, context: &'static SystemContext) -> Self {
         Self {
             instance_repo,
             context,
@@ -503,7 +502,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
 
     use domain::auth::UserId;
     use domain::content::{
@@ -562,7 +560,7 @@ mod tests {
         let context: &'static SystemContext = Box::leak(Box::new(SystemContext { schema, config }));
         let leaked_doc_type = context.schema.find_type(&type_id).unwrap();
 
-        let instance_repo = Arc::new(FakeDocumentInstanceRepository::new());
+        let instance_repo = FakeDocumentInstanceRepository::new();
         let service = DocumentsServiceImpl::new(instance_repo, context);
 
         let caller = CallerContext::system();
@@ -823,7 +821,7 @@ mod tests {
         let context: &'static SystemContext = Box::leak(Box::new(SystemContext { schema, config }));
         let leaked_doc_type = context.schema.find_type(&type_id).unwrap();
 
-        let instance_repo = Arc::new(FakeDocumentInstanceRepository::new());
+        let instance_repo = FakeDocumentInstanceRepository::new();
         let service = DocumentsServiceImpl::new(instance_repo, context);
         let caller = CallerContext::system();
 
@@ -978,7 +976,7 @@ mod tests {
         let leaked_article = context.schema.find_type(&article_type_id).unwrap();
         let leaked_tag = context.schema.find_type(&tag_type_id).unwrap();
 
-        let instance_repo = Arc::new(FakeDocumentInstanceRepository::new());
+        let instance_repo = FakeDocumentInstanceRepository::new();
         let service = DocumentsServiceImpl::new(instance_repo, context);
         let caller = CallerContext::system();
 

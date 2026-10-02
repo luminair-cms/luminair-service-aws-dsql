@@ -74,3 +74,4 @@ pub trait AccessRequestRepository: Send + Sync {
     fn save(&self, request: &AccessRequest)
     -> impl Future<Output = Result<(), DomainError>> + Send;
 }
+

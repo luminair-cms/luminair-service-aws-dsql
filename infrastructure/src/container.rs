@@ -16,6 +16,7 @@ use crate::persistence::repositories::{
     SqlxAccessRequestRepository, SqlxDocumentInstanceRepository, SqlxRoleRepository,
     SqlxShadowUserRepository, SqlxUserRoleAssignmentRepository,
 };
+use crate::persistence::PersistenceContainer;
 
 /// Errors encountered when building an `AppContainer`.
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -27,13 +28,8 @@ pub enum ContainerBuildError {
 /// Central composition root container holding initialized services and adapters.
 #[derive(Clone)]
 pub struct AppContainer {
-    pub pool: PgPool,
     pub context: &'static SystemContext,
-    pub instance_repo: Arc<SqlxDocumentInstanceRepository>,
-    pub access_request_repo: Arc<SqlxAccessRequestRepository>,
-    pub assignment_repo: Arc<SqlxUserRoleAssignmentRepository>,
-    pub role_repo: Arc<SqlxRoleRepository>,
-    pub shadow_user_repo: Arc<SqlxShadowUserRepository>,
+    pub persistence: PersistenceContainer,
     pub documents_service: Arc<DocumentsServiceImpl<SqlxDocumentInstanceRepository>>,
     pub access_requests_service: Arc<
         AccessRequestsServiceImpl<
@@ -62,6 +58,11 @@ impl AppContainer {
         AppContainerBuilder::new(pool, context)
     }
 
+    /// Accessor for database connection pool.
+    pub fn pool(&self) -> &PgPool {
+        &self.persistence.pool
+    }
+
     /// Converts the container into Axum HTTP routing state for route handlers.
     pub fn to_http_state(&self) -> HttpState {
         HttpState {
@@ -81,11 +82,12 @@ pub struct AppContainerBuilder {
     context: &'static SystemContext,
     validator: Option<Arc<dyn TokenValidator>>,
     auth: Option<AuthAppState>,
-    instance_repo: Option<Arc<SqlxDocumentInstanceRepository>>,
-    access_request_repo: Option<Arc<SqlxAccessRequestRepository>>,
-    assignment_repo: Option<Arc<SqlxUserRoleAssignmentRepository>>,
-    role_repo: Option<Arc<SqlxRoleRepository>>,
-    shadow_user_repo: Option<Arc<SqlxShadowUserRepository>>,
+    persistence: Option<PersistenceContainer>,
+    instance_repo: Option<SqlxDocumentInstanceRepository>,
+    access_request_repo: Option<SqlxAccessRequestRepository>,
+    assignment_repo: Option<SqlxUserRoleAssignmentRepository>,
+    role_repo: Option<SqlxRoleRepository>,
+    shadow_user_repo: Option<SqlxShadowUserRepository>,
 }
 
 impl AppContainerBuilder {
@@ -96,6 +98,7 @@ impl AppContainerBuilder {
             context,
             validator: None,
             auth: None,
+            persistence: None,
             instance_repo: None,
             access_request_repo: None,
             assignment_repo: None,
@@ -116,32 +119,38 @@ impl AppContainerBuilder {
         self
     }
 
+    /// Overrides the entire persistence container.
+    pub fn with_persistence(mut self, persistence: PersistenceContainer) -> Self {
+        self.persistence = Some(persistence);
+        self
+    }
+
     /// Overrides the document instance repository.
-    pub fn with_instance_repo(mut self, repo: Arc<SqlxDocumentInstanceRepository>) -> Self {
+    pub fn with_instance_repo(mut self, repo: SqlxDocumentInstanceRepository) -> Self {
         self.instance_repo = Some(repo);
         self
     }
 
     /// Overrides the access request repository.
-    pub fn with_access_request_repo(mut self, repo: Arc<SqlxAccessRequestRepository>) -> Self {
+    pub fn with_access_request_repo(mut self, repo: SqlxAccessRequestRepository) -> Self {
         self.access_request_repo = Some(repo);
         self
     }
 
     /// Overrides the user role assignment repository.
-    pub fn with_assignment_repo(mut self, repo: Arc<SqlxUserRoleAssignmentRepository>) -> Self {
+    pub fn with_assignment_repo(mut self, repo: SqlxUserRoleAssignmentRepository) -> Self {
         self.assignment_repo = Some(repo);
         self
     }
 
     /// Overrides the role repository.
-    pub fn with_role_repo(mut self, repo: Arc<SqlxRoleRepository>) -> Self {
+    pub fn with_role_repo(mut self, repo: SqlxRoleRepository) -> Self {
         self.role_repo = Some(repo);
         self
     }
 
     /// Overrides the shadow user repository.
-    pub fn with_shadow_user_repo(mut self, repo: Arc<SqlxShadowUserRepository>) -> Self {
+    pub fn with_shadow_user_repo(mut self, repo: SqlxShadowUserRepository) -> Self {
         self.shadow_user_repo = Some(repo);
         self
     }
@@ -161,111 +170,92 @@ impl AppContainerBuilder {
         let pool = self.pool;
         let context = self.context;
 
-        let instance_repo = self.instance_repo.unwrap_or_else(|| {
-            Arc::new(SqlxDocumentInstanceRepository::new(
-                pool.clone(),
-                &context.schema,
-            ))
+        let mut persistence = self.persistence.unwrap_or_else(|| PersistenceContainer {
+            pool: pool.clone(),
+            instance_repo: SqlxDocumentInstanceRepository::new(pool.clone(), &context.schema),
+            access_request_repo: auth.access_request_repo.clone(),
+            assignment_repo: auth.assignment_repo.clone(),
+            role_repo: auth.role_repo.clone(),
+            shadow_user_repo: auth.shadow_user_repo.clone(),
         });
-        let access_request_repo = self
-            .access_request_repo
-            .unwrap_or_else(|| Arc::new(auth.access_request_repo.clone()));
-        let assignment_repo = self
-            .assignment_repo
-            .unwrap_or_else(|| Arc::new(auth.assignment_repo.clone()));
-        let role_repo = self
-            .role_repo
-            .unwrap_or_else(|| Arc::new(auth.role_repo.clone()));
-        let shadow_user_repo = self
-            .shadow_user_repo
-            .unwrap_or_else(|| Arc::new(auth.shadow_user_repo.clone()));
 
-        Self::finish_assemble(
-            pool,
-            context,
-            instance_repo,
-            access_request_repo,
-            assignment_repo,
-            role_repo,
-            shadow_user_repo,
-            auth,
-        )
+        if let Some(repo) = self.instance_repo {
+            persistence.instance_repo = repo;
+        }
+        if let Some(repo) = self.access_request_repo {
+            persistence.access_request_repo = repo;
+        }
+        if let Some(repo) = self.assignment_repo {
+            persistence.assignment_repo = repo;
+        }
+        if let Some(repo) = self.role_repo {
+            persistence.role_repo = repo;
+        }
+        if let Some(repo) = self.shadow_user_repo {
+            persistence.shadow_user_repo = repo;
+        }
+
+        Self::finish_assemble(context, persistence, auth)
     }
 
     fn assemble_with_validator(self, validator: Arc<dyn TokenValidator>) -> AppContainer {
         let pool = self.pool;
         let context = self.context;
 
-        let instance_repo = self.instance_repo.unwrap_or_else(|| {
-            Arc::new(SqlxDocumentInstanceRepository::new(
-                pool.clone(),
-                &context.schema,
-            ))
-        });
-        let access_request_repo = self
-            .access_request_repo
-            .unwrap_or_else(|| Arc::new(SqlxAccessRequestRepository::new(pool.clone())));
-        let assignment_repo = self
-            .assignment_repo
-            .unwrap_or_else(|| Arc::new(SqlxUserRoleAssignmentRepository::new(pool.clone())));
-        let role_repo = self
-            .role_repo
-            .unwrap_or_else(|| Arc::new(SqlxRoleRepository::new(pool.clone())));
-        let shadow_user_repo = self
-            .shadow_user_repo
-            .unwrap_or_else(|| Arc::new(SqlxShadowUserRepository::new(pool.clone())));
+        let mut persistence = self
+            .persistence
+            .unwrap_or_else(|| PersistenceContainer::new(pool.clone(), &context.schema));
+
+        if let Some(repo) = self.instance_repo {
+            persistence.instance_repo = repo;
+        }
+        if let Some(repo) = self.access_request_repo {
+            persistence.access_request_repo = repo;
+        }
+        if let Some(repo) = self.assignment_repo {
+            persistence.assignment_repo = repo;
+        }
+        if let Some(repo) = self.role_repo {
+            persistence.role_repo = repo;
+        }
+        if let Some(repo) = self.shadow_user_repo {
+            persistence.shadow_user_repo = repo;
+        }
 
         let auth = AuthAppState::from_parts(
-            pool.clone(),
+            persistence.pool.clone(),
             validator,
-            assignment_repo.clone(),
-            role_repo.clone(),
-            access_request_repo.clone(),
-            shadow_user_repo.clone(),
+            persistence.assignment_repo.clone(),
+            persistence.role_repo.clone(),
+            persistence.access_request_repo.clone(),
+            persistence.shadow_user_repo.clone(),
         );
 
-        Self::finish_assemble(
-            pool,
-            context,
-            instance_repo,
-            access_request_repo,
-            assignment_repo,
-            role_repo,
-            shadow_user_repo,
-            auth,
-        )
+        Self::finish_assemble(context, persistence, auth)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn finish_assemble(
-        pool: PgPool,
         context: &'static SystemContext,
-        instance_repo: Arc<SqlxDocumentInstanceRepository>,
-        access_request_repo: Arc<SqlxAccessRequestRepository>,
-        assignment_repo: Arc<SqlxUserRoleAssignmentRepository>,
-        role_repo: Arc<SqlxRoleRepository>,
-        shadow_user_repo: Arc<SqlxShadowUserRepository>,
+        persistence: PersistenceContainer,
         auth: AuthAppState,
     ) -> AppContainer {
-        let documents_service = Arc::new(DocumentsServiceImpl::new(instance_repo.clone(), context));
+        let documents_service = Arc::new(DocumentsServiceImpl::new(
+            persistence.instance_repo.clone(),
+            context,
+        ));
 
         let access_requests_service = Arc::new(AccessRequestsServiceImpl::new(
-            access_request_repo.clone(),
-            assignment_repo.clone(),
-            role_repo.clone(),
+            persistence.access_request_repo.clone(),
+            persistence.assignment_repo.clone(),
+            persistence.role_repo.clone(),
         ));
 
         let system_config_service = Arc::new(SystemConfigServiceImpl::new(context));
-        let health_checker = Arc::new(HealthChecker::new(pool.clone()));
+        let health_checker = Arc::new(HealthChecker::new(persistence.pool.clone()));
 
         AppContainer {
-            pool,
             context,
-            instance_repo,
-            access_request_repo,
-            assignment_repo,
-            role_repo,
-            shadow_user_repo,
+            persistence,
             documents_service,
             access_requests_service,
             system_config_service,
@@ -345,18 +335,42 @@ mod tests {
         let context = create_test_context();
         let validator = Arc::new(MockTokenValidator::new());
 
-        let custom_instance_repo = Arc::new(SqlxDocumentInstanceRepository::new(
+        let custom_schema = Box::leak(Box::new(SchemaRegistry::default()));
+        let custom_instance_repo = SqlxDocumentInstanceRepository::new(
             pool.clone(),
-            &context.schema,
-        ));
+            custom_schema,
+        );
 
         let container = AppContainer::builder(pool, context)
             .with_validator(validator)
-            .with_instance_repo(custom_instance_repo.clone())
+            .with_instance_repo(custom_instance_repo)
             .build()
             .expect("build with override");
 
-        assert!(Arc::ptr_eq(&container.instance_repo, &custom_instance_repo));
+        assert!(std::ptr::eq(
+            container.persistence.instance_repo.schema_registry(),
+            custom_schema
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_builder_with_persistence_override() {
+        let pool = create_lazy_test_pool();
+        let context = create_test_context();
+        let validator = Arc::new(MockTokenValidator::new());
+
+        let custom_persistence = PersistenceContainer::new(pool.clone(), &context.schema);
+
+        let container = AppContainer::builder(pool, context)
+            .with_validator(validator)
+            .with_persistence(custom_persistence)
+            .build()
+            .expect("build with persistence override");
+
+        assert_eq!(
+            container.persistence.pool.size(),
+            container.pool().size()
+        );
     }
 
     #[tokio::test]

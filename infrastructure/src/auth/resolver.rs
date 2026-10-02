@@ -1,7 +1,5 @@
 //! Enrollment lifecycle and caller context resolution for authenticated identities (ADR-005).
 
-use std::sync::Arc;
-
 use application::context::CallerContext;
 use domain::auth::{
     AccessRequestRepository, AccessRequestStatus, Role, RoleRepository,
@@ -15,10 +13,10 @@ use crate::persistence::repositories::SqlxShadowUserRepository;
 /// Service resolving validated JWT claims into authorized `CallerContext` or enrollment error.
 #[derive(Clone)]
 pub struct AuthContextResolver<U, R, A> {
-    pub assignment_repo: Arc<U>,
-    pub role_repo: Arc<R>,
-    pub access_request_repo: Arc<A>,
-    pub shadow_user_repo: Arc<SqlxShadowUserRepository>,
+    pub assignment_repo: U,
+    pub role_repo: R,
+    pub access_request_repo: A,
+    pub shadow_user_repo: SqlxShadowUserRepository,
 }
 
 impl<U, R, A> AuthContextResolver<U, R, A>
@@ -28,10 +26,10 @@ where
     A: AccessRequestRepository,
 {
     pub fn new(
-        assignment_repo: Arc<U>,
-        role_repo: Arc<R>,
-        access_request_repo: Arc<A>,
-        shadow_user_repo: Arc<SqlxShadowUserRepository>,
+        assignment_repo: U,
+        role_repo: R,
+        access_request_repo: A,
+        shadow_user_repo: SqlxShadowUserRepository,
     ) -> Self {
         Self {
             assignment_repo,

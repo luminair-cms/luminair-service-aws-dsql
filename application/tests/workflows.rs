@@ -1,7 +1,6 @@
 //! Comprehensive end-to-end integration and workflow tests for the Application layer.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use chrono::Utc;
 use domain::auth::{Permission, Role, RoleId, UserId};
@@ -40,10 +39,10 @@ struct TestAppHarness {
         FakeRoleRepository,
     >,
     pub system_config_service: SystemConfigServiceImpl,
-    pub instance_repo: Arc<FakeDocumentInstanceRepository>,
-    pub access_request_repo: Arc<FakeAccessRequestRepository>,
-    pub assignment_repo: Arc<FakeUserRoleAssignmentRepository>,
-    pub role_repo: Arc<FakeRoleRepository>,
+    pub instance_repo: FakeDocumentInstanceRepository,
+    pub access_request_repo: FakeAccessRequestRepository,
+    pub assignment_repo: FakeUserRoleAssignmentRepository,
+    pub role_repo: FakeRoleRepository,
     pub editor_role: Role,
     pub article_type: &'static DocumentType,
     pub single_type: &'static DocumentType,
@@ -135,9 +134,9 @@ impl TestAppHarness {
         let leaked_single_type = context.schema.find_type(&single_type_id).unwrap();
 
         // 4. Repositories
-        let instance_repo = Arc::new(FakeDocumentInstanceRepository::new());
-        let access_request_repo = Arc::new(FakeAccessRequestRepository::new());
-        let assignment_repo = Arc::new(FakeUserRoleAssignmentRepository::new());
+        let instance_repo = FakeDocumentInstanceRepository::new();
+        let access_request_repo = FakeAccessRequestRepository::new();
+        let assignment_repo = FakeUserRoleAssignmentRepository::new();
 
         let editor_role = Role {
             id: RoleId::new(Uuid::now_v7()),
@@ -150,7 +149,7 @@ impl TestAppHarness {
                 Permission::PublishDocument(Some(article_type_id)),
             ],
         };
-        let role_repo = Arc::new(FakeRoleRepository::new().with_role(editor_role.clone()));
+        let role_repo = FakeRoleRepository::new().with_role(editor_role.clone());
 
         // 5. Services
         let documents_service = DocumentsServiceImpl::new(instance_repo.clone(), context);

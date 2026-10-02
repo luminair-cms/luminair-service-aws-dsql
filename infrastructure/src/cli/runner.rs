@@ -90,8 +90,8 @@ pub async fn start_service(config: &ServerConfig) -> Result<AppContainer, CliErr
     run_bootstrap(
         &pool,
         &config.auth,
-        container.assignment_repo.as_ref(),
-        container.access_request_repo.as_ref(),
+        &container.persistence.assignment_repo,
+        &container.persistence.access_request_repo,
     )
     .await?;
 

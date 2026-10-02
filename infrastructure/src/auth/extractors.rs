@@ -37,10 +37,10 @@ pub struct AuthAppState {
 
 impl AuthAppState {
     pub fn new(pool: PgPool, validator: Arc<dyn TokenValidator>) -> Self {
-        let role_repo = Arc::new(SqlxRoleRepository::new(pool.clone()));
-        let assignment_repo = Arc::new(SqlxUserRoleAssignmentRepository::new(pool.clone()));
-        let access_request_repo = Arc::new(SqlxAccessRequestRepository::new(pool.clone()));
-        let shadow_user_repo = Arc::new(SqlxShadowUserRepository::new(pool.clone()));
+        let role_repo = SqlxRoleRepository::new(pool.clone());
+        let assignment_repo = SqlxUserRoleAssignmentRepository::new(pool.clone());
+        let access_request_repo = SqlxAccessRequestRepository::new(pool.clone());
+        let shadow_user_repo = SqlxShadowUserRepository::new(pool.clone());
 
         Self::from_parts(
             pool,
@@ -56,10 +56,10 @@ impl AuthAppState {
     pub fn from_parts(
         pool: PgPool,
         validator: Arc<dyn TokenValidator>,
-        assignment_repo: Arc<SqlxUserRoleAssignmentRepository>,
-        role_repo: Arc<SqlxRoleRepository>,
-        access_request_repo: Arc<SqlxAccessRequestRepository>,
-        shadow_user_repo: Arc<SqlxShadowUserRepository>,
+        assignment_repo: SqlxUserRoleAssignmentRepository,
+        role_repo: SqlxRoleRepository,
+        access_request_repo: SqlxAccessRequestRepository,
+        shadow_user_repo: SqlxShadowUserRepository,
     ) -> Self {
         let resolver = Arc::new(AuthContextResolver::new(
             assignment_repo.clone(),
@@ -72,10 +72,10 @@ impl AuthAppState {
             pool,
             validator,
             resolver,
-            role_repo: (*role_repo).clone(),
-            assignment_repo: (*assignment_repo).clone(),
-            access_request_repo: (*access_request_repo).clone(),
-            shadow_user_repo: (*shadow_user_repo).clone(),
+            role_repo,
+            assignment_repo,
+            access_request_repo,
+            shadow_user_repo,
         }
     }
 }

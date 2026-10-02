@@ -454,3 +454,26 @@ The 2026-09-17 entry used `RelationDefinition` / `ResolvedRelation`. These are s
 - **Full Verification**:
   - 100% of workspace tests pass (89 tests).
   - Zero warnings on `cargo clippy --workspace --all-targets -- -D warnings`.
+
+## 2026-10-02 — `PersistenceContainer` Architecture & Elimination of Redundant Repository `Arc`s
+
+- **Elimination of Double `Arc` Anti-Pattern on Repositories**:
+  - All SQLx repositories (`SqlxDocumentInstanceRepository`, `SqlxAccessRequestRepository`, `SqlxRoleRepository`, `SqlxUserRoleAssignmentRepository`, `SqlxShadowUserRepository`) contain only `PgPool` (which is already `sqlx::Pool<Postgres>`, an internal `Arc<PoolInner>`) and optionally an 8-byte `'static` schema reference (`Copy`).
+  - Removed redundant outer `Arc<Sqlx*Repository>` wrappers across `AppContainer`, `AppContainerBuilder`, `DocumentsServiceImpl<R>`, `AccessRequestsServiceImpl<A, U, R>`, and `AuthContextResolver<U, R, A>`.
+  - Repositories are now held directly by value as lightweight, stack-allocated, cheap-to-clone handles.
+  - Made test fakes (`FakeDocumentInstanceRepository`, `FakeRoleRepository`, `FakeUserRoleAssignmentRepository`, `FakeAccessRequestRepository`) in `application::test_support` derive `Clone` by wrapping internal `RwLock` storage in `Arc`.
+  - Removed all blanket `Arc<T>` delegation implementations from `domain`, keeping `domain` 100% pure and free of test-only delegation boilerplate.
+
+- **Dedicated `PersistenceContainer` (`infrastructure::persistence::container`)**:
+  - Extracted database connection pool and concrete repository instances from `AppContainer` into a dedicated `PersistenceContainer`.
+  - Encapsulates database adapter initialization in a single `PersistenceContainer::new(pool, schema_registry)`.
+  - `AppContainer` (the application composition root) now cleanly coordinates:
+    - `context`: `'static SystemContext`
+    - `persistence`: `PersistenceContainer`
+    - Application services: `documents_service`, `access_requests_service`, `system_config_service`
+    - Cross-cutting infrastructure: `health_checker`, `auth` (`AuthAppState`)
+  - Updated `AppContainerBuilder` with fluent `.with_persistence(persistence)` override while maintaining granular repository overrides.
+- **Streamlined `AuthAppState` Wiring**:
+  - Eliminated awkward `(*repo).clone()` conversions in `AuthAppState::from_parts` and `assemble_with_auth`.
+  - In `cli::runner`, bootstrap hook receives clean borrows directly from `container.persistence`.
+
